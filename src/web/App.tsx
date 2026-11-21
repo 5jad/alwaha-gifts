@@ -601,7 +601,23 @@ export default function App() {
           trackingEnabled={trackingEnabled}
           onTrackingChange={() => setTrackingEnabled(!trackingEnabled)}
         />
+        <a href="/admin" className="header-cta" style={{ fontSize: "12px", color: "var(--gold)" }}>
+          إدارة المتجر <ArrowLeft size={14} />
+        </a>
       </footer>
+
+      {/* Sticky Fast-Buy CTA Bar */}
+      <aside className="sticky-bar" id="sticky-cta-bar" aria-label="شريط الشراء السريع">
+        <div className="sticky-price-block">
+          <span className="sticky-price-label">الإجمالي:</span>
+          <span className="sticky-price-num" id="sticky-price-val">
+            {formatIQD(pricing.totalPriceIQD)}
+          </span>
+        </div>
+        <a href="#order-form" className="sticky-pill-btn" onClick={scrollToOrder}>
+          اطلب الآن
+        </a>
+      </aside>
 
       {/* Order Confirmation Modal (Exact previous design) */}
       {confirmationOrderId && (

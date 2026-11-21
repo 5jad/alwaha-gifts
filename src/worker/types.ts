@@ -30,6 +30,10 @@ export interface Env {
 
   // Custom Store Name
   STORE_NAME_AR?: string;
+
+  // Admin Credentials
+  ADMIN_USERNAME?: string;
+  ADMIN_PASSWORD?: string;
 }
 
 export interface D1OrderRecord {

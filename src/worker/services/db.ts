@@ -163,6 +163,30 @@ export class OrderRepository {
   }
 
   /**
+   * Queries all orders ordered by newest first.
+   */
+  async getAllOrders(limit: number = 100): Promise<D1OrderRecord[]> {
+    const { results } = await this.db.prepare(`
+      SELECT * FROM orders
+      ORDER BY created_at DESC
+      LIMIT ?
+    `).bind(limit).all<D1OrderRecord>();
+
+    return results || [];
+  }
+
+  /**
+   * Finds an order by its ID.
+   */
+  async getOrderById(id: string): Promise<D1OrderRecord | null> {
+    const result = await this.db.prepare(`
+      SELECT * FROM orders WHERE id = ? LIMIT 1
+    `).bind(id).first<D1OrderRecord>();
+
+    return result || null;
+  }
+
+  /**
    * Increments retry counter and records timestamp.
    */
   async incrementRetryCount(id: string): Promise<void> {

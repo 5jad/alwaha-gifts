@@ -311,6 +311,220 @@ app.post('/api/order', async (c) => {
   return c.json(successResponse, 200);
 });
 
+// ==========================================
+// Admin API Routes
+// ==========================================
+
+function verifyAdminAuth(c: any): boolean {
+  const authHeader = c.req.header('authorization') || c.req.header('Authorization') || '';
+  const adminTokenHeader = c.req.header('x-admin-token') || '';
+  const expectedPassword = c.env.ADMIN_PASSWORD || 'admin123456';
+
+  let token = '';
+  if (authHeader.startsWith('Bearer ')) {
+    token = authHeader.slice(7).trim();
+  } else if (adminTokenHeader) {
+    token = adminTokenHeader.trim();
+  }
+
+  // Token is validated if it matches expected password or encoded token
+  return Boolean(token && (token === expectedPassword || token === btoa(`admin:${expectedPassword}`)));
+}
+
+// POST /api/admin/login
+app.post('/api/admin/login', async (c) => {
+  try {
+    const body = await c.req.json() as any;
+    const expectedUsername = c.env.ADMIN_USERNAME || 'admin';
+    const expectedPassword = c.env.ADMIN_PASSWORD || 'admin123456';
+
+    if (body.username === expectedUsername && body.password === expectedPassword) {
+      const token = btoa(`admin:${expectedPassword}`);
+      return c.json({
+        success: true,
+        authenticated: true,
+        token,
+        username: expectedUsername,
+        message: 'تم تسجيل الدخول بنجاح.'
+      });
+    }
+
+    return c.json({ success: false, error: 'اسم المستخدم أو كلمة المرور غير صحيحة.' }, 401);
+  } catch {
+    return c.json({ success: false, error: 'بيانات الدخول غير صالحة.' }, 400);
+  }
+});
+
+// GET /api/admin/session
+app.get('/api/admin/session', (c) => {
+  const isAuthed = verifyAdminAuth(c);
+  return c.json({
+    authenticated: isAuthed,
+    username: isAuthed ? (c.env.ADMIN_USERNAME || 'admin') : null
+  });
+});
+
+// GET /api/admin/orders
+app.get('/api/admin/orders', async (c) => {
+  if (!verifyAdminAuth(c)) {
+    return c.json({ success: false, error: 'غير مصرح بالوصول.' }, 401);
+  }
+
+  const repo = new OrderRepository(c.env.DB);
+  const orders = await repo.getAllOrders(200);
+
+  const totalOrders = orders.length;
+  const totalRevenueIQD = orders.reduce((sum, o) => sum + (o.total_price || 0), 0);
+
+  return c.json({
+    success: true,
+    totalOrders,
+    totalRevenueIQD,
+    orders
+  });
+});
+
+// POST /api/admin/orders/:id/retry
+app.post('/api/admin/orders/:id/retry', async (c) => {
+  if (!verifyAdminAuth(c)) {
+    return c.json({ success: false, error: 'غير مصرح بالوصول.' }, 401);
+  }
+
+  const orderId = c.req.param('id');
+  const repo = new OrderRepository(c.env.DB);
+  const order = await repo.getOrderById(orderId);
+
+  if (!order) {
+    return c.json({ success: false, error: 'الطلب غير موجود.' }, 404);
+  }
+
+  const [tgRes, sheetRes, capiRes] = await Promise.all([
+    sendTelegramOrder(order, c.env),
+    sendSheetsOrder(order, c.env),
+    sendMetaCapiOrder(order, c.env)
+  ]);
+
+  await repo.updateDeliveryStatus(order.id, {
+    telegramSent: tgRes.success,
+    sheetSent: sheetRes.success
+  });
+  await repo.updateMetaStatus(order.id, capiRes.success, capiRes.response, capiRes.error);
+
+  return c.json({
+    success: true,
+    orderId: order.id,
+    telegram: tgRes,
+    sheets: sheetRes,
+    meta: capiRes
+  });
+});
+
+// GET /api/admin/orders/export
+app.get('/api/admin/orders/export', async (c) => {
+  if (!verifyAdminAuth(c)) {
+    return c.text('Unauthorized', 401);
+  }
+
+  const repo = new OrderRepository(c.env.DB);
+  const orders = await repo.getAllOrders(1000);
+
+  const header = ['رقم الطلب', 'تاريخ الطلب', 'العميل', 'الهاتف', 'المحافظة', 'العنوان', 'المنتج', 'الموديل', 'اللون', 'الكمية', 'سعر المفرد', 'المجموع الكلي', 'التلغرام', 'الشيتس', 'ميتا'];
+  const rows = orders.map((o) => [
+    `"${o.id}"`,
+    `"${new Date(o.created_at * 1000).toLocaleString('ar-IQ', { timeZone: 'Asia/Baghdad' })}"`,
+    `"${o.customer_name.replace(/"/g, '""')}"`,
+    `"'${o.phone}"`,
+    `"${o.governorate}"`,
+    `"${o.address.replace(/"/g, '""')}"`,
+    `"${o.product_id}"`,
+    `"${o.model_id}"`,
+    `"${o.color_id}"`,
+    o.quantity,
+    o.unit_price,
+    o.total_price,
+    o.telegram_sent ? 'تم الإرسال' : 'فشل',
+    o.sheet_sent ? 'تم الإرسال' : 'فشل',
+    o.meta_sent ? 'تم الإرسال' : 'فشل'
+  ]);
+
+  const csvContent = '\uFEFF' + [header.join(','), ...rows.map(r => r.join(','))].join('\r\n');
+
+  return new Response(csvContent, {
+    headers: {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="orders-${new Date().toISOString().slice(0, 10)}.csv"`,
+    }
+  });
+});
+
+// GET /api/admin/telegram-status
+app.get('/api/admin/telegram-status', async (c) => {
+  if (!verifyAdminAuth(c)) {
+    return c.json({ success: false, error: 'غير مصرح بالوصول.' }, 401);
+  }
+
+  const hasToken = Boolean(c.env.TELEGRAM_BOT_TOKEN);
+  const hasChatId = Boolean(c.env.TELEGRAM_CHAT_ID);
+
+  return c.json({
+    success: true,
+    botConfigured: hasToken && hasChatId,
+    chatId: c.env.TELEGRAM_CHAT_ID || null,
+    message: hasToken && hasChatId
+      ? 'بوت التلغرام ومعرف المحادثة مضبوطان وجاهزان لاستقبال الطلبات.'
+      : 'إعدادات التلغرام غير مكتملة (يرجى تعيين TELEGRAM_BOT_TOKEN و TELEGRAM_CHAT_ID).'
+  });
+});
+
+// POST /api/admin/telegram-test
+app.post('/api/admin/telegram-test', async (c) => {
+  if (!verifyAdminAuth(c)) {
+    return c.json({ success: false, error: 'غير مصرح بالوصول.' }, 401);
+  }
+
+  if (!c.env.TELEGRAM_BOT_TOKEN || !c.env.TELEGRAM_CHAT_ID) {
+    return c.json({ success: false, error: 'بيانات بوت التلغرام غير مكتملة.' }, 400);
+  }
+
+  try {
+    const text = `🔔 <b>رسالة فحص تجريبية من لوحة إدارة المتجر</b>\n\nبوت التلغرام متصل بنجاح ومستعد لاستقبال طلبات الزبائن!`;
+    const res = await fetch(`https://api.telegram.org/bot${c.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: c.env.TELEGRAM_CHAT_ID,
+        text,
+        parse_mode: 'HTML'
+      })
+    });
+
+    const data = await res.json() as any;
+    if (res.ok && data.ok) {
+      return c.json({ success: true, message: 'تم إرسال رسالة الاختبار بنجاح إلى التلغرام!' });
+    }
+    return c.json({ success: false, error: data.description || 'فشل إرسال رسالة التلغرام' }, 400);
+  } catch (err: any) {
+    return c.json({ success: false, error: err?.message || 'خطأ في الاتصال بتلغرام' }, 500);
+  }
+});
+
+// GET /api/admin/meta-status
+app.get('/api/admin/meta-status', (c) => {
+  if (!verifyAdminAuth(c)) {
+    return c.json({ success: false, error: 'غير مصرح بالوصول.' }, 401);
+  }
+
+  return c.json({
+    success: true,
+    pixelId: c.env.META_PIXEL_ID || null,
+    capiConfigured: Boolean(c.env.META_PIXEL_ID && c.env.META_CAPI_ACCESS_TOKEN),
+    apiVersion: c.env.META_API_VERSION || 'v21.0',
+    currency: c.env.META_CURRENCY || 'USD',
+    usdRate: c.env.USD_RATE || '1310',
+    testEventCode: c.env.META_TEST_EVENT_CODE || null
+  });
+});
+
 // Fallback route: serve static assets if ASSETS binding exists
 app.all('*', async (c) => {
   if (c.env.ASSETS) {
