@@ -7,7 +7,7 @@ import { OrderRepository, SettingsRepository, ProductRepository } from './servic
 import { checkRateLimit, checkAdminLoginRateLimit } from './services/rate-limiter';
 import { sendTelegramOrder } from './services/telegram';
 import { sendSheetsOrder } from './services/sheets';
-import { sendMetaCapiOrder, extractMetaCookies, computeMetaValueAndCurrency } from './services/meta-capi';
+import { sendMetaCapiOrder, sendMetaCapiGenericEvent, extractMetaCookies, computeMetaValueAndCurrency } from './services/meta-capi';
 import { signAdminToken, verifyAdminToken } from './services/admin-auth';
 import { PRODUCT, PRODUCTS, StorefrontProduct, STORE_CONFIG } from '../config/products';
 import { OrderResponse, OrderSuccessResponse } from '../shared/types';
@@ -77,6 +77,42 @@ app.get('/api/meta-config', (c) => {
     usdRate: parseFloat(c.env.USD_RATE || '1520'),
     commissionPercent: parseFloat(c.env.PAYMENT_COMMISSION_PERCENT || '0')
   });
+});
+
+// POST /api/track-event - Tracks non-order events (ViewContent, InitiateCheckout) via CAPI
+app.post('/api/track-event', async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as any;
+  const eventName = body.eventName;
+  if (!eventName || !['ViewContent', 'InitiateCheckout', 'AddToCart'].includes(eventName)) {
+    return c.json({ success: false, error: 'Invalid event' }, 400);
+  }
+
+  const clientIp = c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || '';
+  const userAgent = c.req.header('user-agent') || '';
+  const cookieHeader = c.req.header('cookie');
+  const cookies = extractMetaCookies(cookieHeader);
+
+  c.executionCtx.waitUntil(
+    sendMetaCapiGenericEvent(
+      {
+        eventName,
+        eventId: body.eventId,
+        sourceUrl: body.sourceUrl,
+        value: body.value,
+        currency: body.currency,
+        productId: body.productId,
+        productName: body.productName,
+        fbp: body.fbp || cookies.fbp,
+        fbc: body.fbc || cookies.fbc,
+        fbclid: body.fbclid,
+        ip: clientIp,
+        userAgent,
+      },
+      c.env
+    )
+  );
+
+  return c.json({ success: true });
 });
 
 // POST /api/order - Order Processing Route

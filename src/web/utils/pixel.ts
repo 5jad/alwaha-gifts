@@ -1,14 +1,38 @@
-import { isGlobalPrivacyControlActive } from './tracking';
-
 declare global {
   interface Window {
     fbq?: (...args: any[]) => void;
   }
 }
 
+function getStoredTracking() {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = sessionStorage.getItem('az_tracking_params');
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function sendServerEvent(data: Record<string, any>) {
+  if (typeof window === 'undefined') return;
+  const tracking = getStoredTracking();
+  fetch('/api/track-event', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      ...data,
+      sourceUrl: window.location.href,
+      fbp: tracking.fbp,
+      fbc: tracking.fbc,
+      fbclid: tracking.fbclid,
+    }),
+  }).catch(() => {});
+}
+
 /**
- * Helper to call standard Meta Pixel fbq events safely.
- * Respects Global Privacy Control for non-essential tracking if enabled.
+ * Standard Meta Pixel + Server CAPI integration.
+ * Fires events directly to browser fbq AND synchronizes via backend CAPI.
  */
 export const MetaPixel = {
   pageView(): void {
@@ -17,29 +41,71 @@ export const MetaPixel = {
     }
   },
 
-  viewContent(productName: string, value: number, currency: string = 'USD'): void {
-    if (isGlobalPrivacyControlActive()) return;
+  viewContent(params: { productId: string; productName: string; value: number; currency?: string }): void {
+    const currency = params.currency || 'USD';
+    const eventId = `vc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
     if (typeof window !== 'undefined' && typeof window.fbq === 'function') {
-      window.fbq('track', 'ViewContent', {
-        content_name: productName,
-        content_type: 'product',
-        value,
-        currency,
-      });
-      console.log('[Meta Pixel] Fired ViewContent');
+      window.fbq(
+        'track',
+        'ViewContent',
+        {
+          content_name: params.productName,
+          content_type: 'product',
+          content_ids: [params.productId],
+          value: params.value,
+          currency,
+        },
+        { eventID: eventId }
+      );
+      console.log('[Meta Pixel] Fired ViewContent', eventId);
     }
+
+    sendServerEvent({
+      eventName: 'ViewContent',
+      eventId,
+      productId: params.productId,
+      productName: params.productName,
+      value: params.value,
+      currency,
+    });
   },
 
-  initiateCheckout(value: number, currency: string = 'USD'): void {
-    if (isGlobalPrivacyControlActive()) return;
+  initiateCheckout(params: { productId: string; productName: string; value: number; currency?: string }): void {
+    const currency = params.currency || 'USD';
+    const eventId = `ic-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
     if (typeof window !== 'undefined' && typeof window.fbq === 'function') {
-      window.fbq('track', 'InitiateCheckout', {
+      window.fbq(
+        'track',
+        'InitiateCheckout',
+        {
+          content_name: params.productName,
+          content_type: 'product',
+          content_ids: [params.productId],
+          value: params.value,
+          currency,
+        },
+        { eventID: eventId }
+      );
+      window.fbq('track', 'AddToCart', {
+        content_name: params.productName,
         content_type: 'product',
-        value,
+        content_ids: [params.productId],
+        value: params.value,
         currency,
       });
-      console.log('[Meta Pixel] Fired InitiateCheckout');
+      console.log('[Meta Pixel] Fired InitiateCheckout & AddToCart', eventId);
     }
+
+    sendServerEvent({
+      eventName: 'InitiateCheckout',
+      eventId,
+      productId: params.productId,
+      productName: params.productName,
+      value: params.value,
+      currency,
+    });
   },
 
   purchase(params: {

@@ -219,3 +219,108 @@ export async function sendMetaCapiOrder(
     };
   }
 }
+
+/**
+ * Sends a generic Meta CAPI event (ViewContent, InitiateCheckout, AddToCart, etc.)
+ */
+export async function sendMetaCapiGenericEvent(
+  params: {
+    eventName: string;
+    eventId?: string;
+    sourceUrl?: string;
+    value?: number;
+    currency?: string;
+    productId?: string;
+    productName?: string;
+    fbp?: string;
+    fbc?: string;
+    fbclid?: string;
+    ip?: string;
+    userAgent?: string;
+  },
+  env: Env
+): Promise<{ success: boolean; response?: any; error?: string }> {
+  const pixelId = env.META_PIXEL_ID;
+  const accessToken = env.META_CAPI_ACCESS_TOKEN;
+  const apiVersion = env.META_API_VERSION || 'v21.0';
+
+  if (!pixelId || !accessToken) {
+    return { success: false, error: 'META_PIXEL_ID or META_CAPI_ACCESS_TOKEN is missing' };
+  }
+
+  try {
+    let cleanSourceUrl = 'https://store.local/';
+    if (params.sourceUrl) {
+      try {
+        const parsed = new URL(params.sourceUrl);
+        cleanSourceUrl = `${parsed.origin}${parsed.pathname}`;
+      } catch {
+        cleanSourceUrl = params.sourceUrl.split('?')[0];
+      }
+    }
+
+    const userData: Record<string, any> = {};
+    if (params.ip) userData.client_ip_address = params.ip;
+    if (params.userAgent) userData.client_user_agent = params.userAgent;
+    if (params.fbp) userData.fbp = params.fbp;
+    const resolvedFbc = buildFbc(params.fbclid, params.fbc);
+    if (resolvedFbc) userData.fbc = resolvedFbc;
+
+    const eventData: Record<string, any> = {
+      event_name: params.eventName,
+      event_time: Math.floor(Date.now() / 1000),
+      action_source: 'website',
+      event_source_url: cleanSourceUrl,
+      user_data: userData,
+    };
+
+    if (params.eventId) {
+      eventData.event_id = params.eventId;
+    }
+
+    if (params.value !== undefined) {
+      eventData.custom_data = {
+        currency: params.currency || 'USD',
+        value: params.value,
+        content_type: 'product',
+      };
+      if (params.productId) {
+        eventData.custom_data.content_ids = [params.productId];
+      }
+      if (params.productName) {
+        eventData.custom_data.content_name = params.productName;
+      }
+    }
+
+    const payload: Record<string, any> = {
+      data: [eventData],
+    };
+
+    if (env.META_TEST_EVENT_CODE && env.META_TEST_EVENT_CODE.trim().length > 0) {
+      payload.test_event_code = env.META_TEST_EVENT_CODE.trim();
+    }
+
+    const endpoint = `https://graph.facebook.com/${apiVersion}/${pixelId}/events?access_token=${encodeURIComponent(accessToken)}`;
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(8000),
+    });
+
+    const responseBody = (await res.json()) as any;
+    console.log(`[Meta CAPI] Generic ${params.eventName} response:`, JSON.stringify(responseBody));
+    return {
+      success: res.ok && !responseBody.error,
+      response: responseBody,
+    };
+  } catch (err: any) {
+    console.error(`[Meta CAPI] Generic ${params.eventName} error:`, err?.message || err);
+    return {
+      success: false,
+      error: err?.message || String(err),
+    };
+  }
+}

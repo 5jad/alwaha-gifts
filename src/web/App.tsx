@@ -265,7 +265,12 @@ export default function App() {
   useEffect(() => {
     if (!product || viewedProducts.current.has(product.id)) return;
     const val = computeClientMetaValue(product.priceIQD);
-    MetaPixel.viewContent(product.productName, val, metaConfig.currency || "USD");
+    MetaPixel.viewContent({
+      productId: product.id,
+      productName: product.productName,
+      value: val,
+      currency: metaConfig.currency || "USD",
+    });
     viewedProducts.current.add(product.id);
   }, [product.id, product.productName, product.priceIQD, metaConfig]);
 
@@ -286,7 +291,12 @@ export default function App() {
       hasFiredInitiateCheckout.current = true;
       const currentPricing = calculateOrderPrice(product, form.quantity, catalog);
       const val = computeClientMetaValue(currentPricing.totalPriceIQD);
-      MetaPixel.initiateCheckout(val, metaConfig.currency || "USD");
+      MetaPixel.initiateCheckout({
+        productId: product.id,
+        productName: product.productName,
+        value: val,
+        currency: metaConfig.currency || "USD",
+      });
     }
   }
 
