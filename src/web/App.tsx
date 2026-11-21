@@ -116,6 +116,7 @@ export default function App() {
   const [selectedProductId, setSelectedProductId] = useState<string>(PRODUCTS[0].id);
   const [hasSelectedClock, setHasSelectedClock] = useState(false);
   const [promiseList, setPromiseList] = useState<PromiseItem[]>(DEFAULT_PROMISES);
+  const [turnstileToken, setTurnstileToken] = useState<string>("");
   const [form, setForm] = useState<OrderForm>(initialForm);
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -171,13 +172,17 @@ export default function App() {
   const selectedModel = product.models.find((model) => model.id === form.modelId) ?? product.models[0];
   const storeName = STORE_CONFIG.storeName;
 
-  // Initialize tracking & capture UTMs
+  // Initialize tracking & capture UTMs & Turnstile
   useEffect(() => {
     document.documentElement.lang = "ar";
     document.documentElement.dir = "rtl";
 
     const params = initTracking();
     setTracking(params);
+
+    (window as any).onTurnstileSuccess = (token: string) => {
+      setTurnstileToken(token);
+    };
   }, []);
 
   // Set default model and color when product changes
@@ -289,6 +294,7 @@ export default function App() {
           fbclid: tracking.fbclid,
           fbp: tracking.fbp,
           fbc: tracking.fbc,
+          turnstileToken: turnstileToken || undefined,
         }),
       });
 
@@ -621,6 +627,16 @@ export default function App() {
             <p className="order-submit-disclosure">
               بالضغط على زر الإرسال، ترسل بيانات طلبك للتاجر لتأكيده وتوصيله لباب بيتك مجاناً، والدفع عند الاستلام بعد المعاينة.
             </p>
+
+            {/* Cloudflare Turnstile */}
+            <div
+              className="cf-turnstile"
+              data-sitekey="0x4AAAAAAGMJPHPz05u7vbjI"
+              data-callback="onTurnstileSuccess"
+              data-theme="light"
+              data-language="ar"
+              style={{ margin: "0.5rem auto", display: "flex", justifyContent: "center" }}
+            />
 
             <button className="submit-button" type="submit" disabled={sending}>
               {sending ? (

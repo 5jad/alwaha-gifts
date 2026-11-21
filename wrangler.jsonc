@@ -1,6 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "abu-zahraa-store",
+  "name": "alwaha-gifts",
+  "account_id": "2f6d5fa63c688eafecc7ddd26f6e161a",
   "main": "src/worker/index.ts",
   "compatibility_date": "2024-11-21",
   "compatibility_flags": ["nodejs_compat"],
@@ -14,7 +15,7 @@
     {
       "binding": "DB",
       "database_name": "orders-db",
-      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID",
+      "database_id": "f045cf6f-da07-4f12-a628-8215467fa55a",
       "migrations_dir": "migrations"
     }
   ],
