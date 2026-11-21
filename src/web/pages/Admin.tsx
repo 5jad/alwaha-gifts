@@ -83,14 +83,24 @@ function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
 // ─── Image compression helper ──────────────────────────────────────────────
 function compressImage(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
+    const isPng = file.type === "image/png" || file.name.toLowerCase().endsWith(".png");
+    const isWebp = file.type === "image/webp" || file.name.toLowerCase().endsWith(".webp");
+    const preserveAlpha = isPng || isWebp;
+
     const reader = new FileReader();
     reader.onload = (e) => {
       const img = new Image();
       img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const maxDim = 1000;
+        const maxDim = 1200;
         let width = img.width;
         let height = img.height;
+
+        // If it's already a PNG/WebP within bounds and under 2.5MB, preserve original file directly without any re-encoding
+        if (preserveAlpha && width <= maxDim && height <= maxDim && file.size <= 2.5 * 1024 * 1024) {
+          resolve(e.target?.result as string);
+          return;
+        }
+
         if (width > maxDim || height > maxDim) {
           if (width > height) {
             height = Math.round((height * maxDim) / width);
@@ -100,11 +110,26 @@ function compressImage(file: File): Promise<string> {
             height = maxDim;
           }
         }
+
+        const canvas = document.createElement("canvas");
         canvas.width = width;
         canvas.height = height;
         const ctx = canvas.getContext("2d");
-        ctx?.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL("image/jpeg", 0.85));
+        if (!ctx) {
+          resolve(e.target?.result as string);
+          return;
+        }
+
+        // Ensure canvas background is completely transparent
+        ctx.clearRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+
+        if (preserveAlpha) {
+          // Keep transparent background without converting to black JPEG
+          resolve(canvas.toDataURL("image/png"));
+        } else {
+          resolve(canvas.toDataURL("image/jpeg", 0.85));
+        }
       };
       img.onerror = reject;
       img.src = e.target?.result as string;
