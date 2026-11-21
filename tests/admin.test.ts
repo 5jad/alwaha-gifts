@@ -135,7 +135,7 @@ describe('Admin: ProductRepository', () => {
     const newProduct: StorefrontProduct = {
       id: 'modern-crystal-clock',
       isPublished: true,
-      storeName: 'متجر الأناقة',
+      storeName: 'الواحة للهداية',
       category: 'ساعة كريستال فاخرة',
       productName: 'ساعة الكريستال الملكية',
       nameAr: 'ساعة الكريستال الملكية',

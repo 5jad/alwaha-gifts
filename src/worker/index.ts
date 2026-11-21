@@ -4,10 +4,11 @@ import { bodyLimit } from 'hono/body-limit';
 import { Env, D1OrderRecord } from './types';
 import { orderSchema, normalizeIraqiPhone, verifyTurnstileToken } from './validation';
 import { OrderRepository, SettingsRepository, ProductRepository } from './services/db';
-import { checkRateLimit } from './services/rate-limiter';
+import { checkRateLimit, checkAdminLoginRateLimit } from './services/rate-limiter';
 import { sendTelegramOrder } from './services/telegram';
 import { sendSheetsOrder } from './services/sheets';
-import { sendMetaCapiOrder, extractMetaCookies } from './services/meta-capi';
+import { sendMetaCapiOrder, extractMetaCookies, computeMetaValueAndCurrency } from './services/meta-capi';
+import { signAdminToken, verifyAdminToken } from './services/admin-auth';
 import { PRODUCT, PRODUCTS, StorefrontProduct, STORE_CONFIG } from '../config/products';
 import { OrderResponse, OrderSuccessResponse } from '../shared/types';
 
@@ -59,6 +60,15 @@ app.get('/api/health', (c) => {
     status: 'ok',
     store: c.env.STORE_NAME_AR || PRODUCT.productName,
     time: new Date().toISOString()
+  });
+});
+
+// GET /api/meta-config - Public Meta Pixel configuration synchronization
+app.get('/api/meta-config', (c) => {
+  return c.json({
+    currency: c.env.META_CURRENCY || 'USD',
+    usdRate: parseFloat(c.env.USD_RATE || '1520'),
+    commissionPercent: parseFloat(c.env.PAYMENT_COMMISSION_PERCENT || '0')
   });
 });
 
@@ -177,10 +187,26 @@ app.post('/api/order', async (c) => {
     }, 422);
   }
 
-  // 8. Server-Side Price Recomputation (NEVER trust client prices)
+  // 8. Server-Side Dynamic Catalog Matching & Price Recomputation
   const productRepo = new ProductRepository(c.env.DB);
   const dbProducts = await productRepo.getAllProducts(false);
-  const matchedProduct = dbProducts.find((p) => p.id === data.productId) || PRODUCTS.find((p) => p.id === data.productId) || PRODUCT;
+  const activeCatalog = dbProducts.length > 0 ? dbProducts : PRODUCTS;
+  const matchedProduct = activeCatalog.find((p) => p.id === data.productId) || PRODUCTS.find((p) => p.id === data.productId);
+  if (!matchedProduct) {
+    return c.json({
+      success: false,
+      error: 'المنتج المحدد غير متوفر حالياً.'
+    }, 400);
+  }
+
+  const matchedModel = matchedProduct.models.find((m) => m.id === data.modelId);
+  if (!matchedModel) {
+    return c.json({
+      success: false,
+      error: 'الموديل المختار غير صالح أو غير متوفر لهذا المنتج.'
+    }, 400);
+  }
+
   const basePrice = matchedProduct.priceIQD;
   const qty = Math.max(1, Math.min(20, Math.floor(data.quantity)));
   let discountPerUnit = 0;
@@ -189,6 +215,14 @@ app.post('/api/order', async (c) => {
   const unitPriceIQD = Math.max(1000, basePrice - discountPerUnit);
   const totalPriceIQD = unitPriceIQD * qty;
   const pricing = { unitPriceIQD, totalPriceIQD };
+
+  // Calculate synchronized Meta conversion value (default USD with 0% inflation)
+  const { value: metaValue, currency: metaCurrency } = computeMetaValueAndCurrency(
+    pricing.totalPriceIQD,
+    c.env.META_CURRENCY || 'USD',
+    c.env.USD_RATE || '1520',
+    c.env.PAYMENT_COMMISSION_PERCENT || '0'
+  );
 
   const now = Math.floor(Date.now() / 1000);
   // Generate short, unique Order ID e.g. IQ-829104
@@ -261,70 +295,68 @@ app.post('/api/order', async (c) => {
     }, 500);
   }
 
-  // 10. Load optional Telegram & Sheets credentials from D1 settings or env
-  const settingsRepo = new SettingsRepository(c.env.DB);
-  const dbSettings = await settingsRepo.getAllSettings();
-  const effectiveEnv: Env = {
-    ...c.env,
-    TELEGRAM_CHAT_ID: c.env.TELEGRAM_CHAT_ID || dbSettings['telegram_chat_id'],
-    SHEETS_WEBHOOK_URL: c.env.SHEETS_WEBHOOK_URL || dbSettings['sheets_webhook_url'],
-    SHEETS_SECRET: c.env.SHEETS_SECRET || dbSettings['sheets_secret'],
-  };
-
-  const isTelegramConfigured = Boolean(effectiveEnv.TELEGRAM_BOT_TOKEN && effectiveEnv.TELEGRAM_CHAT_ID);
-  const isSheetsConfigured = Boolean(effectiveEnv.SHEETS_WEBHOOK_URL);
-
-  let telegramSent = false;
-  let sheetsSent = false;
-
-  if (isTelegramConfigured || isSheetsConfigured) {
-    const [telegramResult, sheetsResult] = await Promise.all([
-      isTelegramConfigured ? sendTelegramOrder(orderRecord, effectiveEnv) : Promise.resolve({ success: false }),
-      isSheetsConfigured ? sendSheetsOrder(orderRecord, effectiveEnv) : Promise.resolve({ success: false })
-    ]);
-    telegramSent = telegramResult.success;
-    sheetsSent = sheetsResult.success;
-  }
-
-  // Update D1 delivery flags
-  await repo.updateDeliveryStatus(orderId, {
-    telegramSent,
-    sheetSent: sheetsSent
-  });
-
-  // 12. Run Meta Conversions API (CAPI) inside ctx.waitUntil()
+  // 10. Run all external notification deliveries (Telegram, Sheets, Meta CAPI) in background
+  // This keeps the user order response ultra-fast (<200ms) and prevents timeouts
   c.executionCtx.waitUntil((async () => {
     try {
-      const capiResult = await sendMetaCapiOrder(orderRecord, effectiveEnv);
-      await repo.updateMetaStatus(
-        orderId,
-        capiResult.success,
-        capiResult.response,
-        capiResult.error
-      );
-    } catch (capiErr: any) {
-      console.error(`[Meta CAPI] waitUntil exception for order ${orderId}:`, capiErr?.message || capiErr);
-      await repo.updateMetaStatus(orderId, false, undefined, capiErr?.message || String(capiErr));
+      const settingsRepo = new SettingsRepository(c.env.DB);
+      const dbSettings = await settingsRepo.getAllSettings();
+      const effectiveEnv: Env = {
+        ...c.env,
+        TELEGRAM_CHAT_ID: c.env.TELEGRAM_CHAT_ID || dbSettings['telegram_chat_id'],
+        SHEETS_WEBHOOK_URL: c.env.SHEETS_WEBHOOK_URL || dbSettings['sheets_webhook_url'],
+        SHEETS_SECRET: c.env.SHEETS_SECRET || dbSettings['sheets_secret'],
+      };
+
+      const isTelegramConfigured = Boolean(effectiveEnv.TELEGRAM_BOT_TOKEN && effectiveEnv.TELEGRAM_CHAT_ID);
+      const isSheetsConfigured = Boolean(effectiveEnv.SHEETS_WEBHOOK_URL);
+
+      const [telegramResult, sheetsResult, capiResult] = await Promise.allSettled([
+        isTelegramConfigured
+          ? sendTelegramOrder(orderRecord, effectiveEnv, matchedProduct.productName, matchedModel.name)
+          : Promise.resolve({ success: false }),
+        isSheetsConfigured
+          ? sendSheetsOrder(orderRecord, effectiveEnv, matchedProduct.productName, matchedModel.name)
+          : Promise.resolve({ success: false }),
+        sendMetaCapiOrder(orderRecord, effectiveEnv)
+      ]);
+
+      const telegramSent = telegramResult.status === 'fulfilled' && telegramResult.value.success ? 1 : 0;
+      const sheetSent = sheetsResult.status === 'fulfilled' && sheetsResult.value.success ? 1 : 0;
+
+      await repo.updateDeliveryStatus(orderId, {
+        telegramSent: Boolean(telegramSent),
+        sheetSent: Boolean(sheetSent)
+      });
+
+      if (capiResult.status === 'fulfilled') {
+        await repo.updateMetaStatus(
+          orderId,
+          capiResult.value.success,
+          capiResult.value.response,
+          capiResult.value.error
+        );
+      }
+    } catch (deliveryErr: any) {
+      console.error(`[Order Delivery Background Error] Order ${orderId}:`, deliveryErr?.message || deliveryErr);
     }
   })());
 
-  // 13. Success Response to Customer
-  const targetProduct = matchedProduct;
-  const modelName = targetProduct.models.find(m => m.id === data.modelId)?.name || data.modelId;
-  const colorName = data.colorId;
-
+  // 11. Immediate Success Response to Customer
   const successResponse: OrderSuccessResponse = {
     success: true,
     orderId,
     customerName: data.name,
     totalIQD: pricing.totalPriceIQD,
     quantity: data.quantity,
-    modelName,
-    colorName,
+    modelName: matchedModel.name,
+    colorName: data.colorId,
     governorate: data.governorate,
     phone: phoneInfo.normalized,
     message: 'تم استلام طلبك بنجاح! سيتصل بك مندوبنا لتأكيد التوصيل.',
-    eventId: `purchase-${orderId}`
+    eventId: `purchase-${orderId}`,
+    metaValue,
+    metaCurrency
   };
 
   return c.json(successResponse, 200);
@@ -334,10 +366,22 @@ app.post('/api/order', async (c) => {
 // Admin API Routes
 // ==========================================
 
-function verifyAdminAuth(c: any): boolean {
+// Global Admin Middleware protecting all /api/admin/* routes (except /login)
+app.use('/api/admin/*', async (c, next) => {
+  if (c.req.path === '/api/admin/login') {
+    return next();
+  }
+
+  // Fail closed if required admin secrets are missing
+  if (!c.env.ADMIN_PASSWORD || !c.env.ADMIN_SESSION_SECRET) {
+    return c.json({
+      success: false,
+      error: 'لوحة التحكم غير مهيأة: يرجى ضبط المتغيرات السرية (ADMIN_PASSWORD و ADMIN_SESSION_SECRET).'
+    }, 503);
+  }
+
   const authHeader = c.req.header('authorization') || c.req.header('Authorization') || '';
   const adminTokenHeader = c.req.header('x-admin-token') || '';
-  const expectedPassword = c.env.ADMIN_PASSWORD || 'admin123456';
 
   let token = '';
   if (authHeader.startsWith('Bearer ')) {
@@ -346,29 +390,63 @@ function verifyAdminAuth(c: any): boolean {
     token = adminTokenHeader.trim();
   }
 
-  // Token is validated if it matches expected password or encoded token
-  return Boolean(token && (token === expectedPassword || token === btoa(`admin:${expectedPassword}`)));
-}
+  if (!token) {
+    return c.json({ success: false, error: 'غير مصرح بالوصول: يرجى تسجيل الدخول.' }, 401);
+  }
+
+  const expectedUsername = (c.env.ADMIN_USERNAME || 'admin').trim();
+  const verification = await verifyAdminToken(token, c.env.ADMIN_SESSION_SECRET, expectedUsername);
+  if (!verification.valid) {
+    return c.json({
+      success: false,
+      error: verification.expired ? 'انتهت صلاحية الجلسة، يرجى تسجيل الدخول مجدداً.' : 'رمز الدخول غير صالح.'
+    }, 401);
+  }
+
+  (c as any).adminUsername = verification.username;
+  await next();
+});
 
 // POST /api/admin/login
 app.post('/api/admin/login', async (c) => {
+  const ip = c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || '127.0.0.1';
+
+  // Fail closed if secrets are missing
+  if (!c.env.ADMIN_PASSWORD || !c.env.ADMIN_SESSION_SECRET) {
+    return c.json({
+      success: false,
+      error: 'لوحة التحكم غير مهيأة: يرجى ضبط المتغيرات السرية (ADMIN_PASSWORD و ADMIN_SESSION_SECRET).'
+    }, 503);
+  }
+
+  // Rate Limiting: 5 attempts per 15 minutes per IP
+  const rateLimit = await checkAdminLoginRateLimit(c.env.DB, ip, 5, 15);
+  if (!rateLimit.allowed) {
+    return c.json({
+      success: false,
+      error: 'تم تجاوز الحد المسموح به لمحاولات الدخول (5 محاولات). يرجى الانتظار 15 دقيقة.'
+    }, 429);
+  }
+
   try {
     const body = await c.req.json() as any;
-    const expectedUsername = c.env.ADMIN_USERNAME || 'admin';
-    const expectedPassword = c.env.ADMIN_PASSWORD || 'admin123456';
+    const expectedUsername = (c.env.ADMIN_USERNAME || 'admin').trim();
+    const expectedPassword = c.env.ADMIN_PASSWORD;
 
-    if (body.username === expectedUsername && body.password === expectedPassword) {
-      const token = btoa(`admin:${expectedPassword}`);
-      return c.json({
-        success: true,
-        authenticated: true,
-        token,
-        username: expectedUsername,
-        message: 'تم تسجيل الدخول بنجاح.'
-      });
+    if (body.username !== expectedUsername || body.password !== expectedPassword) {
+      // Small delay on failure to resist brute force timing attacks
+      await new Promise((r) => setTimeout(r, 600));
+      return c.json({ success: false, error: 'اسم المستخدم أو كلمة المرور غير صحيحة.' }, 401);
     }
 
-    return c.json({ success: false, error: 'اسم المستخدم أو كلمة المرور غير صحيحة.' }, 401);
+    const token = await signAdminToken(expectedUsername, c.env.ADMIN_SESSION_SECRET, 12);
+    return c.json({
+      success: true,
+      authenticated: true,
+      token,
+      username: expectedUsername,
+      message: 'تم تسجيل الدخول بنجاح.'
+    });
   } catch {
     return c.json({ success: false, error: 'بيانات الدخول غير صالحة.' }, 400);
   }
@@ -376,19 +454,14 @@ app.post('/api/admin/login', async (c) => {
 
 // GET /api/admin/session
 app.get('/api/admin/session', (c) => {
-  const isAuthed = verifyAdminAuth(c);
   return c.json({
-    authenticated: isAuthed,
-    username: isAuthed ? (c.env.ADMIN_USERNAME || 'admin') : null
+    authenticated: true,
+    username: (c as any).adminUsername || (c.env.ADMIN_USERNAME || 'admin').trim()
   });
 });
 
 // GET /api/admin/orders
 app.get('/api/admin/orders', async (c) => {
-  if (!verifyAdminAuth(c)) {
-    return c.json({ success: false, error: 'غير مصرح بالوصول.' }, 401);
-  }
-
   const repo = new OrderRepository(c.env.DB);
   const orders = await repo.getAllOrders(200);
 
@@ -405,10 +478,6 @@ app.get('/api/admin/orders', async (c) => {
 
 // POST /api/admin/orders/:id/retry
 app.post('/api/admin/orders/:id/retry', async (c) => {
-  if (!verifyAdminAuth(c)) {
-    return c.json({ success: false, error: 'غير مصرح بالوصول.' }, 401);
-  }
-
   const orderId = c.req.param('id');
   const repo = new OrderRepository(c.env.DB);
   const order = await repo.getOrderById(orderId);
@@ -449,10 +518,6 @@ app.post('/api/admin/orders/:id/retry', async (c) => {
 
 // GET /api/admin/orders/export
 app.get('/api/admin/orders/export', async (c) => {
-  if (!verifyAdminAuth(c)) {
-    return c.text('Unauthorized', 401);
-  }
-
   const repo = new OrderRepository(c.env.DB);
   const orders = await repo.getAllOrders(1000);
 
@@ -487,10 +552,6 @@ app.get('/api/admin/orders/export', async (c) => {
 
 // GET /api/admin/telegram-status
 app.get('/api/admin/telegram-status', async (c) => {
-  if (!verifyAdminAuth(c)) {
-    return c.json({ success: false, error: 'غير مصرح بالوصول.' }, 401);
-  }
-
   const settingsRepo = new SettingsRepository(c.env.DB);
   const dbSettings = await settingsRepo.getAllSettings();
   const chatId = c.env.TELEGRAM_CHAT_ID || dbSettings['telegram_chat_id'];
@@ -509,10 +570,6 @@ app.get('/api/admin/telegram-status', async (c) => {
 
 // POST /api/admin/telegram-test
 app.post('/api/admin/telegram-test', async (c) => {
-  if (!verifyAdminAuth(c)) {
-    return c.json({ success: false, error: 'غير مصرح بالوصول.' }, 401);
-  }
-
   const settingsRepo = new SettingsRepository(c.env.DB);
   const dbSettings = await settingsRepo.getAllSettings();
   const botToken = c.env.TELEGRAM_BOT_TOKEN;
@@ -531,7 +588,8 @@ app.post('/api/admin/telegram-test', async (c) => {
         chat_id: chatId,
         text,
         parse_mode: 'HTML'
-      })
+      }),
+      signal: AbortSignal.timeout(8000)
     });
 
     const data = await res.json() as any;
@@ -546,10 +604,6 @@ app.post('/api/admin/telegram-test', async (c) => {
 
 // GET /api/admin/meta-status
 app.get('/api/admin/meta-status', (c) => {
-  if (!verifyAdminAuth(c)) {
-    return c.json({ success: false, error: 'غير مصرح بالوصول.' }, 401);
-  }
-
   return c.json({
     success: true,
     pixelId: c.env.META_PIXEL_ID || null,
@@ -568,9 +622,6 @@ app.get('/api/admin/meta-status', (c) => {
 
 // GET /api/admin/settings
 app.get('/api/admin/settings', async (c) => {
-  if (!verifyAdminAuth(c)) {
-    return c.json({ success: false, error: 'غير مصرح بالوصول.' }, 401);
-  }
   const settings = new SettingsRepository(c.env.DB);
   const all = await settings.getAllSettings();
   return c.json({ success: true, settings: all });
@@ -578,9 +629,6 @@ app.get('/api/admin/settings', async (c) => {
 
 // POST /api/admin/settings
 app.post('/api/admin/settings', async (c) => {
-  if (!verifyAdminAuth(c)) {
-    return c.json({ success: false, error: 'غير مصرح بالوصول.' }, 401);
-  }
   let body: Record<string, string>;
   try {
     body = await c.req.json() as Record<string, string>;
@@ -629,9 +677,6 @@ app.get('/api/products', async (c) => {
 
 // GET /api/admin/products
 app.get('/api/admin/products', async (c) => {
-  if (!verifyAdminAuth(c)) {
-    return c.json({ success: false, error: 'غير مصرح بالوصول.' }, 401);
-  }
   const repo = new ProductRepository(c.env.DB);
   const dbProducts = await repo.getAllProducts(false);
   const dbIds = new Set(dbProducts.map((p) => p.id));
@@ -641,9 +686,6 @@ app.get('/api/admin/products', async (c) => {
 
 // POST /api/admin/products - create
 app.post('/api/admin/products', async (c) => {
-  if (!verifyAdminAuth(c)) {
-    return c.json({ success: false, error: 'غير مصرح بالوصول.' }, 401);
-  }
   let body: any;
   try {
     body = await c.req.json();
@@ -679,9 +721,6 @@ app.post('/api/admin/products', async (c) => {
 
 // PUT /api/admin/products/:id - update
 app.put('/api/admin/products/:id', async (c) => {
-  if (!verifyAdminAuth(c)) {
-    return c.json({ success: false, error: 'غير مصرح بالوصول.' }, 401);
-  }
   const id = c.req.param('id');
   let body: any;
   try {
@@ -712,9 +751,6 @@ app.put('/api/admin/products/:id', async (c) => {
 
 // DELETE /api/admin/products/:id
 app.delete('/api/admin/products/:id', async (c) => {
-  if (!verifyAdminAuth(c)) {
-    return c.json({ success: false, error: 'غير مصرح بالوصول.' }, 401);
-  }
   const id = c.req.param('id');
   const repo = new ProductRepository(c.env.DB);
   await repo.deleteProduct(id);

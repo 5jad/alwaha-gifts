@@ -104,14 +104,20 @@ export function buildTelegramMessage(order: {
 /**
  * Sends order receipt to Telegram Bot API.
  */
-export async function sendTelegramOrder(order: D1OrderRecord, env: Env): Promise<{ success: boolean; error?: string }> {
+export async function sendTelegramOrder(
+  order: D1OrderRecord,
+  env: Env,
+  resolvedProductName?: string,
+  resolvedModelName?: string
+): Promise<{ success: boolean; error?: string }> {
   if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) {
     console.warn('[Telegram] TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is not configured');
     return { success: false, error: 'Telegram credentials missing' };
   }
 
   const targetProduct = PRODUCTS.find(p => p.id === order.product_id) || PRODUCT;
-  const model = targetProduct.models.find(m => m.id === order.model_id)?.name || order.model_id;
+  const productName = resolvedProductName || targetProduct.productName;
+  const model = resolvedModelName || targetProduct.models.find(m => m.id === order.model_id)?.name || order.model_id;
   const color = order.color_id;
 
   const text = buildTelegramMessage({
@@ -120,7 +126,7 @@ export async function sendTelegramOrder(order: D1OrderRecord, env: Env): Promise
     phone: order.phone,
     governorate: order.governorate,
     address: order.address,
-    productName: targetProduct.productName,
+    productName,
     modelName: model,
     colorName: color,
     quantity: order.quantity,
@@ -144,6 +150,7 @@ export async function sendTelegramOrder(order: D1OrderRecord, env: Env): Promise
         parse_mode: 'HTML',
         disable_web_page_preview: true
       }),
+      signal: AbortSignal.timeout(8000)
     });
 
     if (!res.ok) {

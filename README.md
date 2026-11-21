@@ -1,4 +1,4 @@
-# متجر الأناقة للساعات الجدارية الفاخرة (Abu Zahraa Store)
+# الواحة للهداية للساعات الجدارية الفاخرة (Al-Waha Lil-Hidaya Store)
 
 نظام هبوط ومعالجة طلبات متكامل، عالي الأداء والسرعة، ومخصص للسوق العراقي (RTL / Mobile-First)، مصمم للعمل مباشرة على **Cloudflare Workers with Static Assets** كخدمة واحدة سريعة واقتصادية، مع ربط متزامن وفوري بـ **Telegram Bot** و **Google Sheets** و **Meta Pixel + Conversions API (CAPI)** و **Cloudflare D1** لإدارة حالات التكرار وإعادة المحاولة التلقائية عبر Cron Triggers.
 
@@ -52,7 +52,7 @@
 ## 📁 هيكلية المشروع (Project Structure)
 
 ```text
-abu-zahraa/
+al-waha-lil-hidaya/
 ├── .dev.vars.example           # نموذج المتغيرات السرية للتطوير المحلي
 ├── .env.example                # نموذج متغيرات البناء لـ Vite
 ├── .gitignore
@@ -142,7 +142,7 @@ npm run test
 
 ## 📊 إعداد Google Sheets و Apps Script
 
-1. افتح [Google Sheets](https://sheets.new) وأنشئ جدول بيانات جديد (سمّه مثلاً: "طلبات ساعات متجر الأناقة").
+1. افتح [Google Sheets](https://sheets.new) وأنشئ جدول بيانات جديد (سمّه مثلاً: "طلبات ساعات الواحة للهداية").
 2. من القائمة العلوية اضغط على **الإضافات (Extensions)** > **Apps Script**.
 3. احذف الكود الافتراضي والصق محتويات الملف `apps-script/Code.gs` الموجود في المشروع.
 4. (اختياري) يمكنك تعديل الرمز السري `DEFAULT_SECRET` داخل الكود أو تركه كما هو، وتأكد من مطابقته للمتغير `SHEETS_SECRET`.
@@ -200,7 +200,7 @@ cp .dev.vars.example .dev.vars
 TELEGRAM_BOT_TOKEN="7123456789:AAHj..."
 TELEGRAM_CHAT_ID="-1001234567890"
 SHEETS_WEBHOOK_URL="https://script.google.com/macros/s/AKfycbx.../exec"
-SHEETS_SECRET="abu-zahraa-secure-sheets-token-2024"
+SHEETS_SECRET="al-waha-lil-hidaya-secure-sheets-token-2024"
 META_PIXEL_ID="1234567890123456"
 META_CAPI_ACCESS_TOKEN="EAA..."
 META_API_VERSION="v21.0"
@@ -243,7 +243,7 @@ VITE_USD_RATE="1310"
    npx wrangler deploy
    ```
    ستحصل فوراً على رابط العامل الحي الخاص بك، مثل:
-   `https://abu-zahraa-store.<your-subdomain>.workers.dev`
+   `https://al-waha-lil-hidaya-store.<your-subdomain>.workers.dev`
 
 ---
 

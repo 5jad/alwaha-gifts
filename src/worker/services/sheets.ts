@@ -5,14 +5,20 @@ import { formatBaghdadDateTime } from './telegram';
 /**
  * Sends order data to Google Apps Script Web App.
  */
-export async function sendSheetsOrder(order: D1OrderRecord, env: Env): Promise<{ success: boolean; duplicated?: boolean; error?: string }> {
+export async function sendSheetsOrder(
+  order: D1OrderRecord,
+  env: Env,
+  resolvedProductName?: string,
+  resolvedModelName?: string
+): Promise<{ success: boolean; duplicated?: boolean; error?: string }> {
   if (!env.SHEETS_WEBHOOK_URL) {
     console.warn('[Sheets] SHEETS_WEBHOOK_URL is not configured');
     return { success: false, error: 'SHEETS_WEBHOOK_URL missing' };
   }
 
   const targetProduct = PRODUCTS.find(p => p.id === order.product_id) || PRODUCT;
-  const model = targetProduct.models.find(m => m.id === order.model_id)?.name || order.model_id;
+  const productName = resolvedProductName || targetProduct.productName;
+  const model = resolvedModelName || targetProduct.models.find(m => m.id === order.model_id)?.name || order.model_id;
   const color = order.color_id;
   const { date, time } = formatBaghdadDateTime(new Date(order.created_at * 1000));
 
@@ -26,7 +32,7 @@ export async function sendSheetsOrder(order: D1OrderRecord, env: Env): Promise<{
       phone: order.phone,
       governorate: order.governorate,
       address: order.address,
-      productName: targetProduct.productName,
+      productName,
       modelName: model,
       colorName: color,
       quantity: order.quantity,
@@ -46,6 +52,7 @@ export async function sendSheetsOrder(order: D1OrderRecord, env: Env): Promise<{
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(8000)
     });
 
     if (!res.ok) {

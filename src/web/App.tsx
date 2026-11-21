@@ -117,6 +117,35 @@ export default function App() {
   const [hasSelectedClock, setHasSelectedClock] = useState(false);
   const [promiseList, setPromiseList] = useState<PromiseItem[]>(DEFAULT_PROMISES);
   const [turnstileToken, setTurnstileToken] = useState<string>("");
+  const [metaConfig, setMetaConfig] = useState<{ currency: string; usdRate: number; commissionPercent: number }>({
+    currency: "USD",
+    usdRate: 1520,
+    commissionPercent: 0,
+  });
+
+  const turnstileSiteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY || "";
+
+  useEffect(() => {
+    fetch("/api/meta-config")
+      .then((r) => r.json())
+      .then((d: any) => {
+        if (d && d.usdRate) {
+          setMetaConfig({
+            currency: d.currency || "USD",
+            usdRate: Number(d.usdRate) || 1520,
+            commissionPercent: Number(d.commissionPercent) || 0,
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  function computeClientMetaValue(totalIQD: number): number {
+    if (metaConfig.currency === "IQD") return Math.max(1, totalIQD);
+    const base = totalIQD / (metaConfig.usdRate || 1520);
+    const withComm = base * (1 + (metaConfig.commissionPercent || 0) / 100);
+    return Math.max(0.01, Number(withComm.toFixed(2)));
+  }
   const [form, setForm] = useState<OrderForm>(initialForm);
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -200,13 +229,10 @@ export default function App() {
   // ViewContent tracking
   useEffect(() => {
     if (!product || viewedProducts.current.has(product.id)) return;
-    const currency = import.meta.env.VITE_META_CURRENCY || "USD";
-    const usdRate = parseFloat(import.meta.env.VITE_USD_RATE || "1310");
-    const val = currency === "IQD" ? product.priceIQD : Number((product.priceIQD / usdRate).toFixed(2));
-
-    MetaPixel.viewContent(product.productName, Math.max(0.01, val), currency);
+    const val = computeClientMetaValue(product.priceIQD);
+    MetaPixel.viewContent(product.productName, val, metaConfig.currency || "USD");
     viewedProducts.current.add(product.id);
-  }, [product.id, product.productName, product.priceIQD]);
+  }, [product.id, product.productName, product.priceIQD, metaConfig]);
 
   function update(key: keyof OrderForm, value: string | number) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -224,10 +250,8 @@ export default function App() {
     if (!hasFiredInitiateCheckout.current) {
       hasFiredInitiateCheckout.current = true;
       const currentPricing = calculateOrderPrice(product, form.quantity, catalog);
-      const currency = import.meta.env.VITE_META_CURRENCY || "USD";
-      const usdRate = parseFloat(import.meta.env.VITE_USD_RATE || "1310");
-      const val = currency === "IQD" ? currentPricing.totalPriceIQD : Number((currentPricing.totalPriceIQD / usdRate).toFixed(2));
-      MetaPixel.initiateCheckout(Math.max(0.01, val), currency);
+      const val = computeClientMetaValue(currentPricing.totalPriceIQD);
+      MetaPixel.initiateCheckout(val, metaConfig.currency || "USD");
     }
   }
 
@@ -306,18 +330,19 @@ export default function App() {
 
       const successData = data as OrderSuccessResponse;
 
-      // Fire Meta Pixel Purchase
-      const currency = import.meta.env.VITE_META_CURRENCY || "USD";
-      const usdRate = parseFloat(import.meta.env.VITE_USD_RATE || "1310");
-      const val = currency === "IQD" ? successData.totalIQD : Number((successData.totalIQD / usdRate).toFixed(2));
+      // Fire Meta Pixel Purchase (using exact server-synchronized value and currency)
+      if (successData.orderId && successData.orderId !== "IQ-BOT-FILTERED") {
+        const purchaseVal = successData.metaValue ?? computeClientMetaValue(successData.totalIQD);
+        const purchaseCurr = successData.metaCurrency || metaConfig.currency || "USD";
 
-      MetaPixel.purchase({
-        orderId: successData.orderId,
-        value: Math.max(0.01, val),
-        currency,
-        productId: product.id,
-        quantity: successData.quantity,
-      });
+        MetaPixel.purchase({
+          orderId: successData.orderId,
+          value: purchaseVal,
+          currency: purchaseCurr,
+          productId: product.id,
+          quantity: successData.quantity,
+        });
+      }
 
       requestKey.current = null;
       setResult(null);
@@ -393,7 +418,7 @@ export default function App() {
               <span>{storeName}</span>
               <span>{product.productName}</span>
             </div>
-            <div className="vertical-label">ABU ZAHRAA CLOCKS</div>
+            <div className="vertical-label">AL-WAHA GIFTS</div>
           </div>
 
           <div className="hero-index">
@@ -629,14 +654,16 @@ export default function App() {
             </p>
 
             {/* Cloudflare Turnstile */}
-            <div
-              className="cf-turnstile"
-              data-sitekey="0x4AAAAAAGMJPHPz05u7vbjI"
-              data-callback="onTurnstileSuccess"
-              data-theme="light"
-              data-language="ar"
-              style={{ margin: "0.5rem auto", display: "flex", justifyContent: "center" }}
-            />
+            {turnstileSiteKey && (
+              <div
+                className="cf-turnstile"
+                data-sitekey={turnstileSiteKey}
+                data-callback="onTurnstileSuccess"
+                data-theme="light"
+                data-language="ar"
+                style={{ margin: "0.5rem auto", display: "flex", justifyContent: "center" }}
+              />
+            )}
 
             <button className="submit-button" type="submit" disabled={sending}>
               {sending ? (

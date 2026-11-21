@@ -9,7 +9,8 @@
     "directory": "./dist/client",
     "binding": "ASSETS",
     "html_handling": "auto-trailing-slash",
-    "not_found_handling": "single-page-application"
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
   },
   "d1_databases": [
     {
@@ -26,7 +27,7 @@
     "META_API_VERSION": "v21.0",
     "META_CURRENCY": "USD",
     "USD_RATE": "1520",
-    "PAYMENT_COMMISSION_PERCENT": "5",
+    "PAYMENT_COMMISSION_PERCENT": "0",
     "STORE_NAME_AR": "الواحة للهداية"
   }
 }

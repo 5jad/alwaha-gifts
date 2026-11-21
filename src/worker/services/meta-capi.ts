@@ -192,6 +192,7 @@ export async function sendMetaCapiOrder(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(8000)
     });
 
     const responseBody = await res.json() as any;

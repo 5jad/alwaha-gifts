@@ -60,6 +60,8 @@ export interface OrderSuccessResponse {
   phone: string;
   message: string;
   eventId: string; // for Meta Pixel deduplication
+  metaValue?: number;
+  metaCurrency?: string;
 }
 
 export interface OrderErrorResponse {

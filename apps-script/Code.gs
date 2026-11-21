@@ -1,22 +1,19 @@
 /**
- * Google Apps Script Web App for Abu Zahraa Wall Clocks Orders
+ * Google Apps Script Web App for Al-Waha Lil-Hidaya Wall Clocks Orders
  * 
  * Deployment Instructions:
  * 1. Open Google Sheets > Extensions > Apps Script
  * 2. Paste this code into Code.gs
- * 3. Set your SHEETS_SECRET in Script Properties (or directly in the CONFIG below)
+ * 3. Set your SHEETS_SECRET in Project Settings > Script Properties (SHEETS_SECRET = your_token)
  * 4. Click Deploy > New deployment > Select type: Web app
- *    - Description: Order Webhook
+ *    - Description: Al-Waha Lil-Hidaya Orders Webhook
  *    - Execute as: Me
  *    - Who has access: Anyone
- * 5. Copy the Web app URL and set it as SHEETS_WEBHOOK_URL in .dev.vars / wrangler secrets
+ * 5. Copy the Web app URL and set it as SHEETS_WEBHOOK_URL in .dev.vars / Cloudflare secrets
  */
 
-// Default configuration - can also be overridden via Script Properties:
-// PropertiesService.getScriptProperties().getProperty("SHEETS_SECRET")
 var CONFIG = {
   SECRET_PROP_NAME: "SHEETS_SECRET",
-  DEFAULT_SECRET: "abu-zahraa-secure-sheets-token-2024",
   SHEET_NAME: "الطلبات", // Orders sheet name
   HEADERS: [
     "Order ID",
@@ -39,6 +36,20 @@ var CONFIG = {
   ]
 };
 
+/**
+ * Neutralizes spreadsheet formula injection (CSV/Spreadsheet Injection).
+ * Any string value beginning with =, +, -, @, Tab, or Carriage Return
+ * is prepended with a single quote (') so spreadsheets treat it strictly as text.
+ */
+function sanitizeCell(val) {
+  if (val === null || val === undefined) return "";
+  var str = String(val);
+  if (/^[=+\-@\t\r]/.test(str)) {
+    return "'" + str;
+  }
+  return str;
+}
+
 function getSecret() {
   try {
     var propSecret = PropertiesService.getScriptProperties().getProperty(CONFIG.SECRET_PROP_NAME);
@@ -48,7 +59,7 @@ function getSecret() {
   } catch (err) {
     Logger.log("ScriptProperties error: " + err);
   }
-  return CONFIG.DEFAULT_SECRET;
+  return null; // Fail closed: no default secret
 }
 
 function doPost(e) {
@@ -71,10 +82,10 @@ function doPost(e) {
       return jsonResponse({ success: false, error: "Invalid JSON format" }, 400);
     }
 
-    // Validate shared secret
+    // Validate shared secret (Strict: Fail closed if secret missing)
     var expectedSecret = getSecret();
-    if (!payload.secret || payload.secret !== expectedSecret) {
-      return jsonResponse({ success: false, error: "Unauthorized: Invalid secret" }, 401);
+    if (!expectedSecret || !payload.secret || payload.secret !== expectedSecret) {
+      return jsonResponse({ success: false, error: "Unauthorized: Invalid or missing secret" }, 401);
     }
 
     var order = payload.order;
@@ -114,28 +125,27 @@ function doPost(e) {
       }
     }
 
-    // Append new order row
-    // Prepend single quote ' to phone so Google Sheets treats it as text and preserves leading 0
+    // Append new order row with formula injection protection
     var formattedPhone = "'" + (order.phone || "");
 
     var newRow = [
-      order.id || "",
-      order.date || "",
-      order.time || "",
-      order.customerName || "",
+      sanitizeCell(order.id),
+      sanitizeCell(order.date),
+      sanitizeCell(order.time),
+      sanitizeCell(order.customerName),
       formattedPhone,
-      order.governorate || "",
-      order.address || "",
-      order.productName || "ساعة حائط فاخرة",
-      order.modelName || "",
-      order.colorName || "",
-      order.quantity || 1,
-      order.unitPrice || 0,
-      order.totalPrice || 0,
-      order.status || "جديد - قيد التجهيز",
-      order.sourceUrl || "",
-      order.utmSource || "",
-      order.utmCampaign || ""
+      sanitizeCell(order.governorate),
+      sanitizeCell(order.address),
+      sanitizeCell(order.productName || "ساعة حائط فاخرة"),
+      sanitizeCell(order.modelName),
+      sanitizeCell(order.colorName),
+      Number(order.quantity) || 1,
+      Number(order.unitPrice) || 0,
+      Number(order.totalPrice) || 0,
+      sanitizeCell(order.status || "جديد - قيد التجهيز"),
+      sanitizeCell(order.sourceUrl),
+      sanitizeCell(order.utmSource),
+      sanitizeCell(order.utmCampaign)
     ];
 
     sheet.appendRow(newRow);
@@ -158,7 +168,7 @@ function doPost(e) {
 function doGet() {
   return jsonResponse({
     status: "ok",
-    service: "Abu Zahraa Orders Webhook",
+    service: "Al-Waha Lil-Hidaya Orders Webhook",
     time: new Date().toISOString()
   }, 200);
 }

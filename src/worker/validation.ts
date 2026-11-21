@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import { IRAQ_GOVERNORATES } from '../shared/types';
-import { PRODUCT, PRODUCTS } from '../config/products';
 
 /**
  * Converts Arabic-Indic numerals (٠١٢٣٤٥٦٧٨٩) and Persian numerals to Western digits (0123456789).
@@ -106,17 +105,14 @@ export const orderSchema = z.object({
     .max(200, { message: 'العنوان طويل جداً' }),
 
   productId: z
-    .string()
-    .default(PRODUCT.id)
-    .refine((val) => PRODUCTS.some((p) => p.id === val), {
-      message: 'المنتج المحدد غير متوفر'
-    }),
+    .string({ required_error: 'يرجى اختيار المنتج' })
+    .trim()
+    .min(1, { message: 'معرف المنتج مطلوب' }),
 
   modelId: z
     .string({ required_error: 'يرجى اختيار الموديل' })
-    .refine((val) => PRODUCTS.some((p) => p.models.some((m) => m.id === val)), {
-      message: 'الموديل المختار غير صالح'
-    }),
+    .trim()
+    .min(1, { message: 'يرجى اختيار الموديل' }),
 
   colorId: z
     .string({ required_error: 'يرجى اختيار اللون' })

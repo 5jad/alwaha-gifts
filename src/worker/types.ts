@@ -35,6 +35,7 @@ export interface Env {
   // Admin Credentials
   ADMIN_USERNAME?: string;
   ADMIN_PASSWORD?: string;
+  ADMIN_SESSION_SECRET?: string;
 }
 
 export interface D1OrderRecord {
