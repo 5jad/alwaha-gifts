@@ -587,7 +587,7 @@ app.post('/api/admin/settings', async (c) => {
     return c.json({ success: false, error: 'بيانات غير صالحة.' }, 400);
   }
   const settings = new SettingsRepository(c.env.DB);
-  const allowed = ['telegram_chat_id', 'sheets_webhook_url', 'sheets_secret'];
+  const allowed = ['telegram_chat_id', 'sheets_webhook_url', 'sheets_secret', 'promise_strip'];
   for (const key of allowed) {
     if (key in body && typeof body[key] === 'string') {
       await settings.setSetting(key, body[key].trim());
@@ -600,15 +600,23 @@ app.post('/api/admin/settings', async (c) => {
 // Products Public Route
 // ==========================================
 
-// GET /api/products - public, returns D1 products (or fallback to config)
+// GET /api/products - public, returns D1 products and promise strip (or fallback)
 app.get('/api/products', async (c) => {
   try {
     const repo = new ProductRepository(c.env.DB);
-    const dbProducts = await repo.getAllProducts(true);
-    if (dbProducts.length > 0) {
-      return c.json({ success: true, products: dbProducts, source: 'd1' });
+    const settingsRepo = new SettingsRepository(c.env.DB);
+    const [dbProducts, promiseStripRaw] = await Promise.all([
+      repo.getAllProducts(true),
+      settingsRepo.getSetting('promise_strip')
+    ]);
+    let promiseStrip = null;
+    if (promiseStripRaw) {
+      try {
+        promiseStrip = JSON.parse(promiseStripRaw);
+      } catch {}
     }
-    return c.json({ success: true, products: PRODUCTS, source: 'config' });
+    const products = dbProducts.length > 0 ? dbProducts : PRODUCTS;
+    return c.json({ success: true, products, promiseStrip, source: dbProducts.length > 0 ? 'd1' : 'config' });
   } catch {
     return c.json({ success: true, products: PRODUCTS, source: 'config' });
   }

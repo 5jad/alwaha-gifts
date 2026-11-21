@@ -1320,19 +1320,70 @@ h1 em, h2 em {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px clamp(18px, 5vw, 60px);
-  padding-bottom: max(14px, env(safe-area-inset-bottom));
-  background: rgba(30, 31, 26, 0.96);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-top: 1px solid rgba(217, 182, 109, 0.35);
-  box-shadow: 0 -4px 25px rgba(0, 0, 0, 0.25);
-  animation: stickyBarSlideUp 0.3s ease-out;
+  gap: 16px;
+  padding: 12px clamp(16px, 4vw, 40px);
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+  background: rgba(26, 27, 23, 0.94);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-top: 1px solid rgba(217, 182, 109, 0.4);
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.35);
+  animation: stickyBarSlideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.sticky-clock-badge {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.sticky-clock-thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 4px;
+  object-fit: cover;
+  background: #27251f;
+  border: 1px solid rgba(217, 182, 109, 0.3);
+  flex-shrink: 0;
+}
+
+.sticky-clock-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.sticky-clock-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f6f3ed;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+}
+
+.sticky-clock-subtitle {
+  font-size: 11px;
+  color: #a9a69e;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+}
+
+.sticky-actions-group {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-shrink: 0;
 }
 
 /* Ensure page footer has spacing so sticky bar doesn't overlap it */
 .store-page {
-  padding-bottom: 75px;
+  padding-bottom: 85px;
 }
 
 @keyframes stickyBarSlideUp {
@@ -1347,44 +1398,65 @@ h1 em, h2 em {
 .sticky-price-block {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  text-align: right;
+  gap: 1px;
+  text-align: left;
 }
 
 .sticky-price-label {
-  font-size: 11px;
+  font-size: 10px;
   color: #a9a69e;
+  letter-spacing: 0.02em;
 }
 
 .sticky-price-num {
-  font-size: 19px;
+  font-size: 18px;
   font-weight: 700;
   color: #e6c88b;
   font-family: "DM Sans", "IBM Plex Sans Arabic", sans-serif;
+  line-height: 1.1;
 }
 
 .sticky-pill-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--gold);
-  color: #27251f;
+  background: linear-gradient(135deg, #d4b472 0%, #ae8b4d 100%);
+  color: #1a1a15;
   font-weight: 700;
-  font-size: 14px;
+  font-size: 13.5px;
   padding: 10px 24px;
   border-radius: 9999px;
-  transition: background 0.2s, transform 0.2s;
-  box-shadow: 0 4px 14px rgba(174, 139, 77, 0.3);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 4px 16px rgba(174, 139, 77, 0.4);
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .sticky-pill-btn:hover {
-  background: #c5a15d;
-  transform: translateY(-1px);
+  background: linear-gradient(135deg, #e4c482 0%, #be9b5d 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(174, 139, 77, 0.55);
 }
 
 .sticky-pill-btn:active {
-  transform: scale(0.97);
+  transform: scale(0.96);
+}
+
+@media (max-width: 600px) {
+  .sticky-clock-text {
+    display: none;
+  }
+  .sticky-clock-thumb {
+    width: 38px;
+    height: 38px;
+  }
+  .sticky-bar {
+    padding: 10px 16px;
+  }
+  .sticky-pill-btn {
+    padding: 8px 18px;
+    font-size: 13px;
+  }
 }
 
 
@@ -2201,4 +2273,107 @@ h1 em, h2 em {
   .order-card-summary { flex-direction: column; align-items: flex-start; }
   .admin-settings-grid { grid-template-columns: 1fr; }
   .admin-products-grid { grid-template-columns: 1fr; }
+}
+
+/* File upload dropzone & Image Preview Grid */
+.admin-file-dropzone {
+  margin: 0.6rem 0;
+}
+.admin-file-dropzone-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1.25rem 1rem;
+  background: #fdfbf7;
+  border: 2px dashed #d5caa8;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.2s;
+}
+.admin-file-dropzone-btn:hover {
+  background: #fbf5e6;
+  border-color: #ae8b4d;
+}
+.admin-file-dropzone-btn strong {
+  display: block;
+  font-size: 0.9rem;
+  color: #27251f;
+  margin-bottom: 2px;
+}
+.admin-file-dropzone-btn small {
+  display: block;
+  font-size: 0.75rem;
+  color: #78756e;
+}
+.admin-image-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+.admin-image-tile {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  border: 1px solid #dedad2;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #27251f;
+}
+.admin-image-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.admin-image-order-tag {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(39, 37, 31, 0.85);
+  color: #e6c88b;
+  font-size: 0.65rem;
+  text-align: center;
+  padding: 2px 0;
+  font-weight: 600;
+}
+.admin-image-del-btn {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 2px;
+  background: rgba(192, 57, 43, 0.9);
+  color: #fff;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.admin-image-del-btn:hover {
+  background: #c0392b;
+}
+
+/* Promise Strip Row in Settings */
+.admin-promise-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.75rem;
+  background: #fffdf9;
+  border: 1px solid #dedad2;
+  border-radius: 3px;
+}
+@media (max-width: 600px) {
+  .admin-promise-row {
+    flex-direction: column;
+  }
+  .admin-promise-row > div {
+    width: 100% !important;
+  }
 }

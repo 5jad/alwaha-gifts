@@ -33,6 +33,34 @@ export interface StorefrontProduct {
   models: StorefrontModel[];
 }
 
+export interface PromiseItem {
+  id: string;
+  icon: "truck" | "shield-check" | "clock3" | "star" | "package" | "check";
+  title: string;
+  subtitle: string;
+}
+
+export const DEFAULT_PROMISES: PromiseItem[] = [
+  {
+    id: "promise-1",
+    icon: "truck",
+    title: "تأكيد مباشر وتوصيل مجاني",
+    subtitle: "مندوبنا يتواصل وياك ويصل لباب بيتك مجاناً"
+  },
+  {
+    id: "promise-2",
+    icon: "shield-check",
+    title: "فحص ومعاينة قبل الدفع",
+    subtitle: "افتح الطرد وافحص الساعة كاملة قبل تسليم المبلغ"
+  },
+  {
+    id: "promise-3",
+    icon: "clock3",
+    title: "ماكينة صامتة 100%",
+    subtitle: "حركة كوارتز انسيابية ناعمة بدون دقات مزعجة"
+  }
+];
+
 export const STORE_CONFIG = {
   storeName: "متجر الأناقة",
   subtitle: "ساعات جدارية فاخرة",
@@ -217,15 +245,27 @@ export function formatIQD(value: number | null): string {
 }
 
 /**
- * Server recomputes total price from config to prevent client-side tampering.
- * Includes volume discounts (Save 10,000 on 2 clocks, save 21,000 on 3 clocks).
+ * Computes price based on product, unit price, or product ID, with volume discounts.
+ * (Save 10,000 IQD on 2 clocks, save 21,000+ IQD on 3+ clocks).
  */
-export function calculateOrderPrice(productId: string, quantity: number): {
+export function calculateOrderPrice(
+  productOrIdOrPrice: string | StorefrontProduct | number,
+  quantity: number,
+  catalog: StorefrontProduct[] = PRODUCTS
+): {
   unitPriceIQD: number;
   totalPriceIQD: number;
 } {
-  const matchedProduct = PRODUCTS.find((p) => p.id === productId) || PRODUCT;
-  const basePrice = matchedProduct.priceIQD;
+  let basePrice = 35000;
+  if (typeof productOrIdOrPrice === "number") {
+    basePrice = productOrIdOrPrice;
+  } else if (typeof productOrIdOrPrice === "object" && productOrIdOrPrice !== null) {
+    basePrice = productOrIdOrPrice.priceIQD || 35000;
+  } else if (typeof productOrIdOrPrice === "string") {
+    const matchedProduct = catalog.find((p) => p.id === productOrIdOrPrice) || PRODUCTS.find((p) => p.id === productOrIdOrPrice) || PRODUCT;
+    basePrice = matchedProduct.priceIQD || 35000;
+  }
+
   const qty = Math.max(1, Math.min(20, Math.floor(quantity)));
 
   // Volume discounts:

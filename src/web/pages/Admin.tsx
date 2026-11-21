@@ -25,8 +25,18 @@ import {
   AlertTriangle,
   CheckCircle2,
   XCircle,
+  Upload,
+  Sparkles,
 } from "lucide-react";
-import { formatIQD, PRODUCTS, STORE_CONFIG, type StorefrontProduct, type StorefrontModel } from "../../config/products";
+import {
+  formatIQD,
+  PRODUCTS,
+  STORE_CONFIG,
+  DEFAULT_PROMISES,
+  type StorefrontProduct,
+  type StorefrontModel,
+  type PromiseItem,
+} from "../../config/products";
 import { type D1OrderRecord } from "../../worker/types";
 
 type Notice = { type: "success" | "error"; message: string };
@@ -36,18 +46,30 @@ type Tab = "orders" | "products" | "settings";
 const blankProduct = (): Partial<StorefrontProduct> => ({
   id: "",
   isPublished: true,
-  category: "ساعة جدارية",
+  category: "ساعة جدارية ملكية",
   productName: "",
   tagline: "",
   description: "",
   priceIQD: 35000,
   compareAtPriceIQD: 55000,
-  features: [""],
-  images: [{ id: 1, url: "", isActive: true, fit: "contain", scale: 96 }],
-  models: [{ id: "model-1", name: "", colors: [""], stock: 10 }],
+  features: [
+    "محرك كوارتز صامت 100% انسيابي الحركة بدون دقات مزعجة",
+    "هيكل فولاذي فاخر مقاوم للصدأ والرطوبة وتغير اللون",
+    "توصيل سريع ومجاني لباب بيتك لكافة محافظات العراق",
+    "معاينة وفحص وتشغيل الساعة أمام المندوب قبل الدفع",
+  ],
+  images: [],
+  models: [
+    {
+      id: "model-1",
+      name: "الموديل الملكي الأساسي",
+      colors: ["ذهبي ملكي", "أسود مطفي", "روز غولد"],
+      stock: 15,
+    },
+  ],
 });
 
-// ─── Helper ──────────────────────────────────────────────────────────────────
+// ─── Status Badge Helper ────────────────────────────────────────────────────
 function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
   return (
     <span
@@ -56,6 +78,40 @@ function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
       {ok ? <CheckCircle2 size={11} /> : <XCircle size={11} />} {label}: {ok ? "✓" : "✗"}
     </span>
   );
+}
+
+// ─── Image compression helper ──────────────────────────────────────────────
+function compressImage(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const maxDim = 1000;
+        let width = img.width;
+        let height = img.height;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx?.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", 0.85));
+      };
+      img.onerror = reject;
+      img.src = e.target?.result as string;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 export default function Admin() {
@@ -96,6 +152,10 @@ export default function Admin() {
   const [tgTestBusy, setTgTestBusy]       = useState(false);
   const [tgBotReady, setTgBotReady]       = useState(false);
   const [metaInfo, setMetaInfo]           = useState<any>(null);
+
+  // ── Promise Strip Settings ───────────────────────────────────────────────
+  const [promisesList, setPromisesList]   = useState<PromiseItem[]>(DEFAULT_PROMISES);
+  const [promisesBusy, setPromisesBusy]   = useState(false);
 
   // ── Boot ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -159,6 +219,11 @@ export default function Admin() {
           sheets_webhook_url: d.settings?.sheets_webhook_url || "",
           sheets_secret:     d.settings?.sheets_secret     || "",
         });
+        if (d.settings?.promise_strip) {
+          try {
+            setPromisesList(JSON.parse(d.settings.promise_strip));
+          } catch {}
+        }
       }
     } catch (e: any) { flash("error", e?.message || "تعذر التحميل."); }
     finally { setBusy(false); }
@@ -178,7 +243,6 @@ export default function Admin() {
     finally { setProductsLoaded(true); }
   }
 
-  // Switch tab and lazy-load products
   function switchTab(t: Tab) {
     setTab(t);
     if (t === "products" && !productsLoaded) void loadProducts();
@@ -240,6 +304,55 @@ export default function Admin() {
     setShowProductModal(true);
   }
 
+  function handleProductNameChange(name: string) {
+    setEditProduct((p) => {
+      const next = { ...p, productName: name, nameAr: name };
+      if (!isEditMode && (!p.id || p.id.startsWith("clock-") || p.id === "")) {
+        const slug = name
+          .trim()
+          .toLowerCase()
+          .replace(/[^\w\u0621-\u064A]+/g, "-")
+          .replace(/^-+|-+$/g, "");
+        next.id = slug || `clock-${Date.now().toString(36)}`;
+      }
+      return next;
+    });
+  }
+
+  async function handleImageFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    try {
+      const base64List = await Promise.all(files.map(compressImage));
+      setEditProduct((p) => {
+        const current = p.images || [];
+        const newImgs = base64List.map((url, idx) => ({
+          id: Date.now() + idx,
+          url,
+          isActive: true,
+          fit: "contain" as const,
+          scale: 96,
+        }));
+        return {
+          ...p,
+          images: [...current.filter((img) => Boolean(img.url)), ...newImgs],
+        };
+      });
+      flash("success", `تم رفع ${files.length} صورة من جهازك بنجاح.`);
+    } catch {
+      flash("error", "فشل تجهيز إحدى الصور، يرجى المحاولة بصورة أخرى.");
+    }
+    e.target.value = "";
+  }
+
+  function removeProductImage(index: number) {
+    setEditProduct((p) => {
+      const imgs = [...(p.images || [])];
+      imgs.splice(index, 1);
+      return { ...p, images: imgs };
+    });
+  }
+
   async function saveProduct(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setProductBusy(true);
@@ -288,6 +401,26 @@ export default function Admin() {
     finally { setSettingsBusy(false); }
   }
 
+  async function savePromises(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setPromisesBusy(true);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ promise_strip: JSON.stringify(promisesList) }),
+      });
+      const data = await res.json() as any;
+      if (!res.ok || !data.success) throw new Error(data.error || "فشل الحفظ.");
+      flash("success", "تم حفظ شريط الوعود والمميزات بنجاح.");
+      void loadAll();
+    } catch (err: any) {
+      flash("error", err?.message || "خطأ في الحفظ.");
+    } finally {
+      setPromisesBusy(false);
+    }
+  }
+
   async function testTelegram() {
     setTgTestBusy(true);
     try {
@@ -311,32 +444,19 @@ export default function Admin() {
     );
   });
 
-  // ── Product form helpers ──────────────────────────────────────────────────
+  // ── Form helpers ──────────────────────────────────────────────────────────
   function setFeature(i: number, val: string) {
     const f = [...(editProduct.features || [])];
     f[i] = val;
     setEditProduct((p) => ({ ...p, features: f }));
   }
-  function addFeature()       { setEditProduct((p) => ({ ...p, features: [...(p.features || []), ""] })); }
+  function addFeature() {
+    setEditProduct((p) => ({ ...p, features: [...(p.features || []), ""] }));
+  }
   function removeFeature(i: number) {
     const f = [...(editProduct.features || [])];
     f.splice(i, 1);
     setEditProduct((p) => ({ ...p, features: f }));
-  }
-
-  function setImageUrl(i: number, url: string) {
-    const imgs = [...(editProduct.images || [])];
-    imgs[i] = { ...imgs[i], url };
-    setEditProduct((p) => ({ ...p, images: imgs }));
-  }
-  function addImage() {
-    const imgs = editProduct.images || [];
-    setEditProduct((p) => ({ ...p, images: [...imgs, { id: imgs.length + 1, url: "", isActive: true, fit: "contain", scale: 96 }] }));
-  }
-  function removeImage(i: number) {
-    const imgs = [...(editProduct.images || [])];
-    imgs.splice(i, 1);
-    setEditProduct((p) => ({ ...p, images: imgs }));
   }
 
   function setModel(i: number, field: keyof StorefrontModel, val: any) {
@@ -350,12 +470,36 @@ export default function Admin() {
   }
   function addModel() {
     const ms = editProduct.models || [];
-    setEditProduct((p) => ({ ...p, models: [...ms, { id: `model-${ms.length + 1}`, name: "", colors: [""], stock: 10 }] }));
+    setEditProduct((p) => ({
+      ...p,
+      models: [...ms, { id: `model-${ms.length + 1}`, name: "", colors: [""], stock: 10 }],
+    }));
   }
   function removeModel(i: number) {
     const ms = [...(editProduct.models || [])];
     ms.splice(i, 1);
     setEditProduct((p) => ({ ...p, models: ms }));
+  }
+
+  // ── Promise editor helpers ────────────────────────────────────────────────
+  function updatePromiseItem(idx: number, field: keyof PromiseItem, val: string) {
+    const copy = [...promisesList];
+    copy[idx] = { ...copy[idx], [field]: val };
+    setPromisesList(copy);
+  }
+  function addPromiseItem() {
+    setPromisesList((prev) => [
+      ...prev,
+      {
+        id: `promise-${Date.now()}`,
+        icon: "check",
+        title: "ميزة جديدة",
+        subtitle: "تفاصيل الميزة الترويجية",
+      },
+    ]);
+  }
+  function removePromiseItem(idx: number) {
+    setPromisesList((prev) => prev.filter((_, i) => i !== idx));
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -386,7 +530,7 @@ export default function Admin() {
           <p className="eyebrow">دخول الإدارة</p>
           <h1>تسجيل الدخول</h1>
           <p className="admin-muted">
-            سجّل الدخول لمتابعة الطلبات وإدارة المنتجات وإعدادات الربط.
+            سجّل الدخول لمتابعة الطلبات، إدارة المنتجات والصور، وضبط إعدادات الربط.
           </p>
           <form onSubmit={login} className="admin-form">
             <label htmlFor="admin-username">اسم المستخدم</label>
@@ -412,7 +556,16 @@ export default function Admin() {
               <button
                 type="button"
                 onClick={() => setShowPw((s) => !s)}
-                style={{ position: "absolute", left: "0.75rem", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#78756e" }}
+                style={{
+                  position: "absolute",
+                  left: "0.75rem",
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "#78756e",
+                }}
                 aria-label={showPw ? "إخفاء" : "إظهار"}
               >
                 {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -437,7 +590,11 @@ export default function Admin() {
         <div className={`admin-global-notice ${notice.type}`} role="alert">
           {notice.type === "success" ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
           {notice.message}
-          <button type="button" onClick={() => setNotice(null)} style={{ marginRight: "auto", background: "none", border: "none", cursor: "pointer", color: "inherit" }}>
+          <button
+            type="button"
+            onClick={() => setNotice(null)}
+            style={{ marginRight: "auto", background: "none", border: "none", cursor: "pointer", color: "inherit" }}
+          >
             <X size={15} />
           </button>
         </div>
@@ -462,14 +619,16 @@ export default function Admin() {
             <RefreshCw size={14} className={busy ? "spin" : ""} />
             <span className="hide-xs">تحديث</span>
           </button>
-          <a className="admin-store-link" href="/">معاينة المتجر ↗</a>
+          <a className="admin-store-link" href="/" target="_blank" rel="noopener noreferrer">
+            معاينة المتجر ↗
+          </a>
           <button className="admin-logout" onClick={logout}>
             <LogOut size={14} /> <span className="hide-xs">خروج</span>
           </button>
         </div>
       </header>
 
-      {/* ── KPI Cards ── */}
+      {/* ── KPI Row ── */}
       <div className="admin-kpi-row">
         <div className="admin-kpi-card">
           <div className="admin-kpi-label"><Package size={15} /> إجمالي الطلبات</div>
@@ -502,7 +661,7 @@ export default function Admin() {
             className={`admin-tab${tab === "products" ? " active" : ""}`}
             onClick={() => switchTab("products")}
           >
-            <Package size={15} /> المنتجات
+            <Package size={15} /> المنتجات والساعات
           </button>
           <button
             role="tab"
@@ -510,7 +669,7 @@ export default function Admin() {
             className={`admin-tab${tab === "settings" ? " active" : ""}`}
             onClick={() => switchTab("settings")}
           >
-            <Settings size={15} /> إعدادات الربط
+            <Settings size={15} /> إعدادات الربط والوعود
           </button>
         </nav>
       </div>
@@ -594,7 +753,7 @@ export default function Admin() {
                     {/* Expanded details */}
                     {expanded && (
                       <div className="order-history-details">
-                        <div><span>العنوان</span><strong>{order.address}</strong></div>
+                        <div><span>العنوان بالتفصيل</span><strong>{order.address}</strong></div>
                         <div>
                           <span>المنتج / الموديل / اللون</span>
                           <strong>{order.product_id} | {order.model_id} | {order.color_id}</strong>
@@ -610,7 +769,7 @@ export default function Admin() {
                           </div>
                         )}
                         <div>
-                          <span>Idempotency Key</span>
+                          <span>معرف عدم التكرار (Idempotency Key)</span>
                           <code style={{ fontSize: "0.68rem", fontFamily: "monospace", color: "#78756e", wordBreak: "break-all" }} dir="ltr">{order.idempotency_key}</code>
                         </div>
                         <div>
@@ -645,8 +804,8 @@ export default function Admin() {
         <section className="admin-panel">
           <div className="admin-panel-heading">
             <div>
-              <p className="eyebrow">كتالوج المنتجات</p>
-              <h2>الساعات المتوفرة ({products.length})</h2>
+              <p className="eyebrow">كتالوج الساعات الفاخرة</p>
+              <h2>الساعات المتوفرة في المتجر ({products.length})</h2>
             </div>
             <button className="admin-primary" type="button" onClick={openAddProduct}>
               <Plus size={15} /> إضافة ساعة جديدة
@@ -656,16 +815,17 @@ export default function Admin() {
           {!productsLoaded ? (
             <div className="order-history-state"><LoaderCircle size={20} className="spin" /> جارٍ التحميل…</div>
           ) : products.length === 0 ? (
-            <div className="order-history-state">لا توجد منتجات.</div>
+            <div className="order-history-state">لا توجد منتجات مسجلة. اضغط على "إضافة ساعة جديدة" أعلاه.</div>
           ) : (
             <div className="admin-products-grid">
               {products.map((p) => (
                 <div key={p.id} className={`admin-product-card${p.isPublished ? "" : " unpublished"}`}>
                   <div className="admin-product-img">
-                    {p.images?.[0]?.url
-                      ? <img src={p.images[0].url} alt="" loading="lazy" />
-                      : <Clock3 size={28} style={{ color: "#a38c61" }} />
-                    }
+                    {p.images?.[0]?.url ? (
+                      <img src={p.images[0].url} alt="" loading="lazy" />
+                    ) : (
+                      <Clock3 size={28} style={{ color: "#a38c61" }} />
+                    )}
                   </div>
                   <div className="admin-product-body">
                     <div className="admin-product-top">
@@ -675,7 +835,9 @@ export default function Admin() {
                       </span>
                     </div>
                     <p className="admin-product-cat">{p.category}</p>
-                    <p className="admin-product-desc">{p.description?.slice(0, 90)}{(p.description?.length || 0) > 90 ? "…" : ""}</p>
+                    <p className="admin-product-desc">
+                      {p.description?.slice(0, 90)}{(p.description?.length || 0) > 90 ? "…" : ""}
+                    </p>
                     <div className="admin-product-footer">
                       <strong className="admin-product-price">{formatIQD(p.priceIQD)}</strong>
                       {p.compareAtPriceIQD > p.priceIQD && (
@@ -711,23 +873,23 @@ export default function Admin() {
         <section className="admin-panel">
           <div className="admin-panel-heading">
             <div>
-              <p className="eyebrow">إعدادات الربط</p>
-              <h2>Telegram · Google Sheets · Meta</h2>
+              <p className="eyebrow">إعدادات المتجر والربط</p>
+              <h2>إعدادات القنوات وشريط الوعود</h2>
             </div>
           </div>
 
           <div className="admin-settings-grid">
-            {/* Telegram */}
+            {/* 1. Telegram */}
             <div className="admin-settings-card">
               <div className="admin-settings-card-header">
                 <Send size={17} className="text-gold" />
                 <h3>Telegram Bot</h3>
                 <span className={`admin-product-badge ${tgBotReady ? "published" : "draft"}`}>
-                  {tgBotReady ? "متصل" : "غير مضبوط"}
+                  {tgBotReady ? "متصل" : "غير مضبوط (اختياري)"}
                 </span>
               </div>
               <p className="admin-muted" style={{ fontSize: "0.82rem" }}>
-                معرف المحادثة (Chat ID) اختياري — إذا تُرك فارغاً، يُستخدم <code>TELEGRAM_CHAT_ID</code> من env.
+                معرف المحادثة (Chat ID) اختياري — الطلبات تخزن في D1 حتى لو لم يتم تفعيل التلغرام.
               </p>
               <form onSubmit={saveSettings} className="admin-form" style={{ marginTop: "1rem" }}>
                 <label>معرف محادثة التلغرام (Chat ID)</label>
@@ -750,23 +912,23 @@ export default function Admin() {
                     title={tgBotReady ? "إرسال رسالة اختبار" : "البوت غير مضبوط بعد"}
                     style={{ flexShrink: 0 }}
                   >
-                    {tgTestBusy ? <><LoaderCircle size={14} className="spin" /> جارٍ…</> : <><Send size={14} /> اختبار</>}
+                    {tgTestBusy ? <><LoaderCircle size={14} className="spin" /> جارٍ…</> : <><Send size={14} /> فحص التلغرام</>}
                   </button>
                 </div>
               </form>
             </div>
 
-            {/* Google Sheets */}
+            {/* 2. Google Sheets */}
             <div className="admin-settings-card">
               <div className="admin-settings-card-header">
                 <Check size={17} className="text-gold" />
                 <h3>Google Sheets Webhook</h3>
                 <span className={`admin-product-badge ${settings.sheets_webhook_url ? "published" : "draft"}`}>
-                  {settings.sheets_webhook_url ? "مضبوط" : "غير مضبوط"}
+                  {settings.sheets_webhook_url ? "مضبوط" : "غير مضبوط (اختياري)"}
                 </span>
               </div>
               <p className="admin-muted" style={{ fontSize: "0.82rem" }}>
-                رابط ويب آب Google Apps Script الذي يستقبل الطلبات ويكتبها في الشيت.
+                رابط تطبيق ويب Google Apps Script الذي يستقبل ويسجل صفوف الطلبات في الشيت.
               </p>
               <form onSubmit={saveSettings} className="admin-form" style={{ marginTop: "1rem" }}>
                 <label>رابط Webhook (Sheets URL)</label>
@@ -786,22 +948,22 @@ export default function Admin() {
                   dir="ltr"
                 />
                 <button className="admin-primary" type="submit" disabled={settingsBusy} style={{ marginTop: "0.75rem" }}>
-                  {settingsBusy ? <><LoaderCircle size={15} className="spin" /> حفظ…</> : <><Check size={15} /> حفظ الإعدادات</>}
+                  {settingsBusy ? <><LoaderCircle size={15} className="spin" /> حفظ…</> : <><Check size={15} /> حفظ إعدادات الشيتس</>}
                 </button>
               </form>
             </div>
 
-            {/* Meta Status */}
+            {/* 3. Meta Status */}
             <div className="admin-settings-card">
               <div className="admin-settings-card-header">
                 <ShieldCheck size={17} className="text-gold" />
                 <h3>Meta Pixel & CAPI</h3>
                 <span className={`admin-product-badge ${metaInfo?.capiConfigured ? "published" : "draft"}`}>
-                  {metaInfo?.capiConfigured ? "جاهز" : "يحتاج إعداد"}
+                  {metaInfo?.capiConfigured ? "جاهز ومضبوط" : "يحتاج ضبط أسرار"}
                 </span>
               </div>
               <p className="admin-muted" style={{ fontSize: "0.82rem", marginBottom: "0.75rem" }}>
-                تُضبط هذه القيم عبر متغيرات البيئة (<code>wrangler secret put</code>) ولا يمكن تغييرها من هنا.
+                تُضبط هذه القيم لحماية الأمان عبر <code>wrangler secret put</code>.
               </p>
               <div className="admin-meta-info">
                 <div><span>Pixel ID</span><code>{metaInfo?.pixelId || "—"}</code></div>
@@ -816,6 +978,79 @@ export default function Admin() {
               </div>
             </div>
           </div>
+
+          {/* 4. Promise Strip Manager (شريط الوعود والمميزات) */}
+          <div className="admin-settings-card" style={{ marginTop: "1.5rem" }}>
+            <div className="admin-settings-card-header">
+              <Sparkles size={18} className="text-gold" />
+              <h3>شريط الوعود والمميزات الترويجية (Promise Strip)</h3>
+            </div>
+            <p className="admin-muted" style={{ fontSize: "0.82rem" }}>
+              هذه هي الوعود والميزات الثلاث (أو أكثر) التي تظهر أسفل ساعة العرض مباشرة في الصفحة الرئيسية.
+            </p>
+
+            <form onSubmit={savePromises} className="admin-form" style={{ marginTop: "1rem" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                {promisesList.map((item, idx) => (
+                  <div key={item.id || idx} className="admin-promise-row">
+                    <div style={{ width: "120px" }}>
+                      <label style={{ fontSize: "0.72rem" }}>الأيقونة</label>
+                      <select
+                        value={item.icon}
+                        onChange={(e) => updatePromiseItem(idx, "icon", e.target.value as any)}
+                        style={{ padding: "0.4rem 0.5rem", fontSize: "0.82rem" }}
+                      >
+                        <option value="truck">🚚 توصيل مجاني</option>
+                        <option value="shield-check">🛡️ فحص ومعاينة</option>
+                        <option value="clock3">⏰ ماكينة صامتة</option>
+                        <option value="package">📦 جودة وتغليف</option>
+                        <option value="star">⭐ ضمان ذهبي</option>
+                        <option value="check">✓ علامة صح</option>
+                      </select>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: "0.72rem" }}>العنوان الرئيسي</label>
+                      <input
+                        value={item.title}
+                        onChange={(e) => updatePromiseItem(idx, "title", e.target.value)}
+                        placeholder="تأكيد مباشر وتوصيل مجاني"
+                        required
+                      />
+                    </div>
+                    <div style={{ flex: 1.5 }}>
+                      <label style={{ fontSize: "0.72rem" }}>النص التوضيحي</label>
+                      <input
+                        value={item.subtitle}
+                        onChange={(e) => updatePromiseItem(idx, "subtitle", e.target.value)}
+                        placeholder="مندوبنا يتواصل وياك ويصل لباب بيتك مجاناً"
+                        required
+                      />
+                    </div>
+                    {promisesList.length > 1 && (
+                      <button
+                        type="button"
+                        className="admin-icon-btn danger"
+                        onClick={() => removePromiseItem(idx)}
+                        style={{ alignSelf: "flex-end", marginBottom: "2px" }}
+                        title="حذف هذا الوعد"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ display: "flex", gap: "0.6rem", marginTop: "1rem" }}>
+                <button type="button" className="admin-quiet-button" onClick={addPromiseItem}>
+                  <Plus size={14} /> إضافة ميزة / وعد جديد
+                </button>
+                <button type="submit" className="admin-primary" disabled={promisesBusy} style={{ marginRight: "auto" }}>
+                  {promisesBusy ? <><LoaderCircle size={15} className="spin" /> جارٍ الحفظ…</> : <><Check size={15} /> حفظ شريط الوعود</>}
+                </button>
+              </div>
+            </form>
+          </div>
         </section>
       )}
 
@@ -824,25 +1059,53 @@ export default function Admin() {
       </p>
 
       {/* ════════════════════════════════════
-          PRODUCT MODAL
+          PRODUCT MODAL (REORGANIZED & ORDERED)
       ════════════════════════════════════ */}
       {showProductModal && (
         <div className="admin-modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowProductModal(false)}>
           <div className="admin-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
             <div className="admin-modal-header">
-              <h2 id="modal-title">{isEditMode ? "تعديل المنتج" : "إضافة ساعة جديدة"}</h2>
-              <button type="button" onClick={() => setShowProductModal(false)} className="admin-modal-close" aria-label="إغلاق">
+              <h2 id="modal-title">
+                {isEditMode ? "تعديل بيانات الساعة" : "إضافة ساعة جدارية جديدة"}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowProductModal(false)}
+                className="admin-modal-close"
+                aria-label="إغلاق"
+              >
                 <X size={18} />
               </button>
             </div>
 
             <form onSubmit={saveProduct} className="admin-modal-form">
-              {/* Basic Info */}
+              {/* 1️⃣ الخطوة الأولى: البيانات الأساسية */}
               <fieldset>
-                <legend>المعلومات الأساسية</legend>
+                <legend>1️⃣ المعلومات الأساسية وتسمية الساعة</legend>
                 <div className="admin-form-row">
                   <div>
-                    <label>معرف المنتج (ID) *</label>
+                    <label>اسم الساعة الفاخرة (عربي) *</label>
+                    <input
+                      required
+                      placeholder="مثال: ساعة إشعاع الشمس الملكية"
+                      value={editProduct.productName || ""}
+                      onChange={(e) => handleProductNameChange(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label>فئة الساعة أو التصنيف *</label>
+                    <input
+                      required
+                      placeholder="مثال: ساعة جدارية ملكية"
+                      value={editProduct.category || ""}
+                      onChange={(e) => setEditProduct((p) => ({ ...p, category: e.target.value }))}
+                    />
+                  </div>
+                </div>
+
+                <div className="admin-form-row" style={{ alignItems: "center" }}>
+                  <div>
+                    <label>معرف الساعة البرمجي (ID) *</label>
                     <input
                       required
                       dir="ltr"
@@ -852,150 +1115,189 @@ export default function Admin() {
                       disabled={isEditMode}
                     />
                   </div>
-                  <div>
-                    <label>الفئة</label>
-                    <input
-                      placeholder="ساعة جدارية ملكية"
-                      value={editProduct.category || ""}
-                      onChange={(e) => setEditProduct((p) => ({ ...p, category: e.target.value }))}
-                    />
+                  <div style={{ paddingTop: "1.2rem" }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: "0.6rem", cursor: "pointer", fontWeight: 700 }}>
+                      <input
+                        type="checkbox"
+                        checked={editProduct.isPublished !== false}
+                        onChange={(e) => setEditProduct((p) => ({ ...p, isPublished: e.target.checked }))}
+                        style={{ width: "18px", height: "18px" }}
+                      />
+                      نشر فوري (تظهر الساعة في المتجر للزبائن)
+                    </label>
                   </div>
                 </div>
-                <label>اسم المنتج (عربي) *</label>
-                <input
-                  required
-                  placeholder="ساعة إشعاع الشمس الملكية"
-                  value={editProduct.productName || ""}
-                  onChange={(e) => setEditProduct((p) => ({ ...p, productName: e.target.value }))}
-                />
-                <label>الشعار المختصر (Tagline)</label>
-                <input
-                  placeholder="لمسة فخامة وأناقة عصرية…"
-                  value={editProduct.tagline || ""}
-                  onChange={(e) => setEditProduct((p) => ({ ...p, tagline: e.target.value }))}
-                />
-                <label>الوصف التفصيلي</label>
-                <textarea
-                  rows={3}
-                  value={editProduct.description || ""}
-                  onChange={(e) => setEditProduct((p) => ({ ...p, description: e.target.value }))}
-                />
               </fieldset>
 
-              {/* Pricing */}
+              {/* 2️⃣ الخطوة الثانية: التسعير */}
               <fieldset>
-                <legend>التسعير</legend>
+                <legend>2️⃣ التسعير والعروض بالدينار العراقي (IQD)</legend>
                 <div className="admin-form-row">
                   <div>
-                    <label>السعر (د.ع) *</label>
+                    <label>سعر البيع الفعلي للزبون (د.ع) *</label>
                     <input
                       type="number"
                       required
-                      min={0}
+                      min={1000}
+                      step={500}
                       dir="ltr"
+                      placeholder="35000"
                       value={editProduct.priceIQD || ""}
-                      onChange={(e) => setEditProduct((p) => ({ ...p, priceIQD: Number(e.target.value), basePriceIQD: Number(e.target.value) }))}
+                      onChange={(e) =>
+                        setEditProduct((p) => ({
+                          ...p,
+                          priceIQD: Number(e.target.value),
+                          basePriceIQD: Number(e.target.value),
+                        }))
+                      }
                     />
                   </div>
                   <div>
-                    <label>السعر قبل التخفيض (د.ع)</label>
+                    <label>السعر السابق قبل التخفيض (د.ع) (يظهر مشطوباً)</label>
                     <input
                       type="number"
                       min={0}
+                      step={500}
                       dir="ltr"
+                      placeholder="55000"
                       value={editProduct.compareAtPriceIQD || ""}
-                      onChange={(e) => setEditProduct((p) => ({ ...p, compareAtPriceIQD: Number(e.target.value) }))}
+                      onChange={(e) =>
+                        setEditProduct((p) => ({
+                          ...p,
+                          compareAtPriceIQD: Number(e.target.value),
+                        }))
+                      }
                     />
                   </div>
                 </div>
-                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
+              </fieldset>
+
+              {/* 3️⃣ الخطوة الثالثة: صور الساعة (رفع مباشر من الجهاز) */}
+              <fieldset>
+                <legend>3️⃣ صور الساعة (رفع مباشر من جهازك أو ملفاتك)</legend>
+                
+                {/* File Upload Trigger */}
+                <div className="admin-file-dropzone">
                   <input
-                    type="checkbox"
-                    checked={editProduct.isPublished !== false}
-                    onChange={(e) => setEditProduct((p) => ({ ...p, isPublished: e.target.checked }))}
+                    type="file"
+                    id="admin-clock-files"
+                    multiple
+                    accept="image/*"
+                    onChange={handleImageFileUpload}
+                    style={{ display: "none" }}
                   />
-                  منشور (يظهر في المتجر)
-                </label>
-              </fieldset>
+                  <label htmlFor="admin-clock-files" className="admin-file-dropzone-btn">
+                    <Upload size={20} className="text-gold" />
+                    <div>
+                      <strong>اضغط هنا لاختيار صور الساعة من جهازك</strong>
+                      <small>يمكنك اختيار صورة واحدة أو عدة صور دفعة واحدة (JPG, PNG, WebP)</small>
+                    </div>
+                  </label>
+                </div>
 
-              {/* Images */}
-              <fieldset>
-                <legend>صور المنتج</legend>
-                {(editProduct.images || []).map((img, i) => (
-                  <div key={i} className="admin-form-row" style={{ alignItems: "center" }}>
-                    <input
-                      type="url"
-                      dir="ltr"
-                      placeholder="https://…"
-                      value={img.url}
-                      onChange={(e) => setImageUrl(i, e.target.value)}
-                      style={{ flex: 1 }}
-                    />
-                    {img.url && <img src={img.url} alt="" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 2 }} />}
-                    <button type="button" className="admin-icon-btn danger" onClick={() => removeImage(i)}><X size={13} /></button>
+                {/* Display uploaded images preview grid */}
+                {(editProduct.images || []).length > 0 && (
+                  <div className="admin-image-preview-grid">
+                    {(editProduct.images || []).map((img, i) => (
+                      <div key={img.id || i} className="admin-image-tile">
+                        <img src={img.url} alt={`معاينة ${i + 1}`} />
+                        <span className="admin-image-order-tag">صورة {i + 1} {i === 0 ? "★ الرئيسية" : ""}</span>
+                        <button
+                          type="button"
+                          className="admin-image-del-btn"
+                          onClick={() => removeProductImage(i)}
+                          title="حذف هذه الصورة"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    ))}
                   </div>
-                ))}
-                <button type="button" className="admin-quiet-button" onClick={addImage} style={{ marginTop: "0.4rem" }}>
-                  <Plus size={13} /> إضافة صورة
-                </button>
+                )}
               </fieldset>
 
-              {/* Features */}
+              {/* 4️⃣ الخطوة الرابعة: الموديلات، الألوان، والمخزون */}
               <fieldset>
-                <legend>المميزات (قائمة)</legend>
-                {(editProduct.features || []).map((f, i) => (
-                  <div key={i} className="admin-form-row" style={{ alignItems: "center" }}>
-                    <input
-                      value={f}
-                      onChange={(e) => setFeature(i, e.target.value)}
-                      placeholder={`ميزة ${i + 1}`}
-                      style={{ flex: 1 }}
-                    />
-                    <button type="button" className="admin-icon-btn danger" onClick={() => removeFeature(i)}><X size={13} /></button>
-                  </div>
-                ))}
-                <button type="button" className="admin-quiet-button" onClick={addFeature} style={{ marginTop: "0.4rem" }}>
-                  <Plus size={13} /> إضافة ميزة
-                </button>
-              </fieldset>
-
-              {/* Models */}
-              <fieldset>
-                <legend>الموديلات وألوانها</legend>
+                <legend>4️⃣ الموديلات والألوان والكميات المتوفرة</legend>
                 {(editProduct.models || []).map((m, i) => (
-                  <div key={i} className="admin-model-block">
+                  <div key={m.id || i} className="admin-model-block">
                     <div className="admin-form-row">
                       <div style={{ flex: 1 }}>
-                        <label>اسم الموديل</label>
+                        <label>اسم الموديل أو الحجم</label>
                         <input
                           value={m.name}
                           onChange={(e) => setModel(i, "name", e.target.value)}
-                          placeholder="موديل الذهبي الملكي"
+                          placeholder="مثال: قطر 50 سم (المقاس الملكي)"
                         />
                       </div>
                       <div>
-                        <label>المخزون</label>
+                        <label>المخزون المتوفر</label>
                         <input
                           type="number"
                           min={0}
                           dir="ltr"
                           value={m.stock}
                           onChange={(e) => setModel(i, "stock", Number(e.target.value))}
-                          style={{ width: "5rem" }}
+                          style={{ width: "6rem" }}
                         />
                       </div>
-                      <button type="button" className="admin-icon-btn danger" onClick={() => removeModel(i)} style={{ marginTop: "1.4rem" }}><X size={13} /></button>
+                      <button
+                        type="button"
+                        className="admin-icon-btn danger"
+                        onClick={() => removeModel(i)}
+                        style={{ marginTop: "1.4rem" }}
+                        title="حذف الموديل"
+                      >
+                        <Trash2 size={14} />
+                      </button>
                     </div>
-                    <label>الألوان (مفصولة بفاصلة)</label>
+                    <label>الألوان المتوفرة لهذا الموديل (اكتب الألوان وافصل بينها بفاصلة)</label>
                     <input
                       value={(m.colors || []).join(", ")}
                       onChange={(e) => setModelColors(i, e.target.value)}
-                      placeholder="ذهبي ملكي, أسود مطفي, روز غولد"
+                      placeholder="مثال: ذهبي ملكي, أسود مطفي, فضي كريستال"
                     />
                   </div>
                 ))}
                 <button type="button" className="admin-quiet-button" onClick={addModel} style={{ marginTop: "0.4rem" }}>
-                  <Plus size={13} /> إضافة موديل
+                  <Plus size={13} /> إضافة موديل أو حجم آخر
+                </button>
+              </fieldset>
+
+              {/* 5️⃣ الخطوة الخامسة: الشعار والمواصفات الترويجية */}
+              <fieldset>
+                <legend>5️⃣ الشعار والمواصفات والوصف التسويقي</legend>
+                <label>الشعار الترويجي البارز (Tagline)</label>
+                <input
+                  placeholder="مثال: لمسة فخامة وأناقة عصرية تحول جدار منزلك إلى تحفة فنية راقية"
+                  value={editProduct.tagline || ""}
+                  onChange={(e) => setEditProduct((p) => ({ ...p, tagline: e.target.value }))}
+                />
+
+                <label>الوصف التفصيلي للساعة</label>
+                <textarea
+                  rows={3}
+                  placeholder="ساعة جدارية مصممة بعناية فائقة وتعمل بحركة الكوارتز الصامتة تماماً..."
+                  value={editProduct.description || ""}
+                  onChange={(e) => setEditProduct((p) => ({ ...p, description: e.target.value }))}
+                />
+
+                <label>مميزات الساعة (تظهر في قائمة المواصفات):</label>
+                {(editProduct.features || []).map((f, i) => (
+                  <div key={i} className="admin-form-row" style={{ alignItems: "center", marginBottom: "0.3rem" }}>
+                    <input
+                      value={f}
+                      onChange={(e) => setFeature(i, e.target.value)}
+                      placeholder={`ميزة ${i + 1}`}
+                      style={{ flex: 1 }}
+                    />
+                    <button type="button" className="admin-icon-btn danger" onClick={() => removeFeature(i)}>
+                      <X size={13} />
+                    </button>
+                  </div>
+                ))}
+                <button type="button" className="admin-quiet-button" onClick={addFeature} style={{ marginTop: "0.4rem" }}>
+                  <Plus size={13} /> إضافة ميزة أخرى
                 </button>
               </fieldset>
 
@@ -1004,10 +1306,11 @@ export default function Admin() {
                   إلغاء
                 </button>
                 <button type="submit" className="admin-primary" disabled={productBusy}>
-                  {productBusy
-                    ? <><LoaderCircle size={15} className="spin" /> جارٍ الحفظ…</>
-                    : <><Check size={15} /> {isEditMode ? "حفظ التعديلات" : "إضافة المنتج"}</>
-                  }
+                  {productBusy ? (
+                    <><LoaderCircle size={15} className="spin" /> جارٍ الحفظ…</>
+                  ) : (
+                    <><Check size={15} /> {isEditMode ? "حفظ التعديلات" : "إضافة الساعة إلى المتجر"}</>
+                  )}
                 </button>
               </div>
             </form>

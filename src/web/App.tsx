@@ -5,7 +5,9 @@ import {
   Check,
   Clock3,
   LoaderCircle,
+  Package,
   ShieldCheck,
+  Star,
   Truck,
 } from "lucide-react";
 import {
@@ -14,6 +16,8 @@ import {
   STORE_CONFIG,
   StorefrontProduct,
   calculateOrderPrice,
+  DEFAULT_PROMISES,
+  type PromiseItem,
 } from "../config/products";
 import ProductCards from "./components/ProductCards";
 import ProductGallery from "./components/ProductGallery";
@@ -83,20 +87,35 @@ function StoreHeader({
             </>
           )}
         </nav>
-        <a
-          className="header-cta"
-          href={hasSelection ? "#order" : "#product-selection"}
-        >
-          {hasSelection ? "اطلبها الآن" : "اختار ساعتك"} <ArrowLeft size={16} />
-        </a>
       </header>
     </>
   );
 }
 
+function getPromiseIcon(iconName: string) {
+  switch (iconName) {
+    case "truck":
+      return <Truck size={19} />;
+    case "shield-check":
+    case "shield":
+      return <ShieldCheck size={19} />;
+    case "clock3":
+    case "clock":
+      return <Clock3 size={19} />;
+    case "star":
+      return <Star size={19} />;
+    case "package":
+      return <Package size={19} />;
+    default:
+      return <Check size={19} />;
+  }
+}
+
 export default function App() {
   const [catalog, setCatalog] = useState<StorefrontProduct[]>(PRODUCTS);
   const [selectedProductId, setSelectedProductId] = useState<string>(PRODUCTS[0].id);
+  const [hasSelectedClock, setHasSelectedClock] = useState(false);
+  const [promiseList, setPromiseList] = useState<PromiseItem[]>(DEFAULT_PROMISES);
   const [form, setForm] = useState<OrderForm>(initialForm);
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -129,7 +148,7 @@ export default function App() {
     }, 2500);
   };
 
-  // Fetch dynamic products from D1 / API
+  // Fetch dynamic products and promise strip from D1 / API
   useEffect(() => {
     fetch('/api/products')
       .then((r) => r.json())
@@ -140,6 +159,9 @@ export default function App() {
           if (!data.products.some((p: StorefrontProduct) => p.id === selectedProductId)) {
             setSelectedProductId(data.products[0].id);
           }
+        }
+        if (data.success && Array.isArray(data.promiseStrip) && data.promiseStrip.length > 0) {
+          setPromiseList(data.promiseStrip);
         }
       })
       .catch(() => {});
@@ -186,8 +208,9 @@ export default function App() {
   }
 
   function selectProduct(next: StorefrontProduct) {
-    if (sending || next.id === selectedProductId) return;
+    if (sending) return;
     setSelectedProductId(next.id);
+    setHasSelectedClock(true);
     setResult(null);
     requestKey.current = null;
   }
@@ -195,10 +218,10 @@ export default function App() {
   function handleFormFocus() {
     if (!hasFiredInitiateCheckout.current) {
       hasFiredInitiateCheckout.current = true;
-      const pricing = calculateOrderPrice(product.id, form.quantity);
+      const currentPricing = calculateOrderPrice(product, form.quantity, catalog);
       const currency = import.meta.env.VITE_META_CURRENCY || "USD";
       const usdRate = parseFloat(import.meta.env.VITE_USD_RATE || "1310");
-      const val = currency === "IQD" ? pricing.totalPriceIQD : Number((pricing.totalPriceIQD / usdRate).toFixed(2));
+      const val = currency === "IQD" ? currentPricing.totalPriceIQD : Number((currentPricing.totalPriceIQD / usdRate).toFixed(2));
       MetaPixel.initiateCheckout(Math.max(0.01, val), currency);
     }
   }
@@ -305,7 +328,7 @@ export default function App() {
     }
   }
 
-  const pricing = calculateOrderPrice(product.id, form.quantity);
+  const pricing = calculateOrderPrice(product, form.quantity, catalog);
   const currentProductIdx = catalog.findIndex((p) => p.id === product.id) + 1;
 
   return (
@@ -376,33 +399,17 @@ export default function App() {
 
         {/* Promise Strip */}
         <section className="promise-strip" id="story">
-          <div>
-            <span className="promise-icon">
-              <Truck size={19} />
-            </span>
-            <p>
-              <strong>تأكيد مباشر وتوصيل مجاني</strong>
-              <small>مندوبنا يتواصل وياك ويصل لباب بيتك مجاناً</small>
-            </p>
-          </div>
-          <div>
-            <span className="promise-icon">
-              <ShieldCheck size={19} />
-            </span>
-            <p>
-              <strong>فحص ومعاينة قبل الدفع</strong>
-              <small>افتح الطرد وافحص الساعة كاملة قبل تسليم المبلغ</small>
-            </p>
-          </div>
-          <div>
-            <span className="promise-icon">
-              <Clock3 size={19} />
-            </span>
-            <p>
-              <strong>ماكينة صامتة 100%</strong>
-              <small>حركة كوارتز انسيابية ناعمة بدون دقات مزعجة</small>
-            </p>
-          </div>
+          {promiseList.map((item, idx) => (
+            <div key={item.id || idx}>
+              <span className="promise-icon">
+                {getPromiseIcon(item.icon)}
+              </span>
+              <p>
+                <strong>{item.title}</strong>
+                <small>{item.subtitle}</small>
+              </p>
+            </div>
+          ))}
         </section>
 
         {/* Details Section */}
@@ -652,18 +659,37 @@ export default function App() {
         <span>ساعات جدارية تختارها بعناية — توصيل لجميع محافظات العراق.</span>
       </footer>
 
-      {/* Sticky Fast-Buy CTA Bar */}
-      <aside className="sticky-bar" id="sticky-cta-bar" aria-label="شريط الشراء السريع">
-        <div className="sticky-price-block">
-          <span className="sticky-price-label">الإجمالي:</span>
-          <span className="sticky-price-num" id="sticky-price-val">
-            {formatIQD(pricing.totalPriceIQD)}
-          </span>
-        </div>
-        <a href="#order-form" className="sticky-pill-btn" onClick={scrollToOrder}>
-          اطلب الآن
-        </a>
-      </aside>
+      {/* Sticky Fast-Buy CTA Bar - only visible when a clock has been selected */}
+      {hasSelectedClock && (
+        <aside className="sticky-bar" id="sticky-cta-bar" aria-label="شريط الشراء السريع">
+          <div className="sticky-clock-badge">
+            {product.images[0]?.url && (
+              <img
+                src={product.images[0].url}
+                alt=""
+                className="sticky-clock-thumb"
+              />
+            )}
+            <div className="sticky-clock-text">
+              <strong className="sticky-clock-title">{product.productName}</strong>
+              <small className="sticky-clock-subtitle">
+                {selectedModel?.name || product.category} {form.color ? `— ${form.color}` : ""}
+              </small>
+            </div>
+          </div>
+          <div className="sticky-actions-group">
+            <div className="sticky-price-block">
+              <span className="sticky-price-label">المجموع النهائي:</span>
+              <span className="sticky-price-num" id="sticky-price-val">
+                {formatIQD(pricing.totalPriceIQD)}
+              </span>
+            </div>
+            <a href="#order-form" className="sticky-pill-btn" onClick={scrollToOrder}>
+              اطلب الآن
+            </a>
+          </div>
+        </aside>
+      )}
 
       {/* Order Confirmation Modal (Exact previous design) */}
       {confirmationOrderId && (
