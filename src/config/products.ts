@@ -245,8 +245,8 @@ export function formatIQD(value: number | null): string {
 }
 
 /**
- * Computes price based on product, unit price, or product ID, with volume discounts.
- * (Save 10,000 IQD on 2 clocks, save 21,000+ IQD on 3+ clocks).
+ * Computes price based on product, unit price, or product ID.
+ * Flat pricing: total = basePrice * quantity.
  */
 export function calculateOrderPrice(
   productOrIdOrPrice: string | StorefrontProduct | number,
@@ -266,17 +266,8 @@ export function calculateOrderPrice(
     basePrice = matchedProduct.priceIQD || 35000;
   }
 
-  const qty = Math.max(1, Math.min(20, Math.floor(quantity)));
-
-  // Volume discounts:
-  let discountPerUnit = 0;
-  if (qty === 2) {
-    discountPerUnit = 5000; // 10,000 IQD discount on 2 units
-  } else if (qty >= 3) {
-    discountPerUnit = 7000; // 21,000+ IQD discount on 3+ units
-  }
-
-  const unitPriceIQD = Math.max(1000, basePrice - discountPerUnit);
+  const qty = Math.max(1, Math.min(50, Math.floor(quantity)));
+  const unitPriceIQD = basePrice;
   const totalPriceIQD = unitPriceIQD * qty;
 
   return {

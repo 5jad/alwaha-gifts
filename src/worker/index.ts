@@ -215,11 +215,16 @@ app.post('/api/order', async (c) => {
   }
 
   const basePrice = matchedProduct.priceIQD;
-  const qty = Math.max(1, Math.min(20, Math.floor(data.quantity)));
-  let discountPerUnit = 0;
-  if (qty === 2) discountPerUnit = 5000;
-  else if (qty >= 3) discountPerUnit = 7000;
-  const unitPriceIQD = Math.max(1000, basePrice - discountPerUnit);
+  const availableStock = matchedModel.stock && matchedModel.stock > 0 ? matchedModel.stock : 20;
+  if (data.quantity > availableStock) {
+    return c.json({
+      success: false,
+      error: `عذراً، الكمية المطلوبة (${data.quantity}) تتجاوز المتوفر في المخزن. المتبقي لهذا الموديل هو (${availableStock}) قطع فقط.`
+    }, 400);
+  }
+
+  const qty = Math.max(1, Math.min(availableStock, Math.floor(data.quantity)));
+  const unitPriceIQD = basePrice;
   const totalPriceIQD = unitPriceIQD * qty;
   const pricing = { unitPriceIQD, totalPriceIQD };
 

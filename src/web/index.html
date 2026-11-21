@@ -29,11 +29,12 @@
       
       // Inject pixel ID at build time via Vite replacement %VITE_META_PIXEL_ID%
       var pixelId = '%VITE_META_PIXEL_ID%';
-      if (pixelId && pixelId !== '%' + 'VITE_META_PIXEL_ID' + '%' && pixelId.trim() !== '') {
+      if (!pixelId || pixelId.indexOf('%') !== -1 || pixelId.trim() === '') {
+        pixelId = '4526699384253098';
+      }
+      if (pixelId && pixelId.trim() !== '') {
         fbq('init', pixelId.trim());
         fbq('track', 'PageView');
-      } else {
-        console.warn('[Meta Pixel] VITE_META_PIXEL_ID is not configured in build environment.');
       }
     </script>
     <!-- End Meta Pixel Code -->

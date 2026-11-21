@@ -5,7 +5,9 @@ import {
   Check,
   Clock3,
   LoaderCircle,
+  Minus,
   Package,
+  Plus,
   ShieldCheck,
   Star,
   Truck,
@@ -201,7 +203,15 @@ export default function App() {
 
   const product = catalog.find((item) => item.id === selectedProductId) ?? catalog[0];
   const selectedModel = product.models.find((model) => model.id === form.modelId) ?? product.models[0];
+  const maxStock = Math.max(1, selectedModel?.stock ?? 20);
   const storeName = STORE_CONFIG.storeName;
+
+  // Auto-clamp quantity if model stock is lower than current selection
+  useEffect(() => {
+    if (form.quantity > maxStock) {
+      setForm((current) => ({ ...current, quantity: maxStock }));
+    }
+  }, [maxStock, form.quantity]);
 
   // Initialize tracking & capture UTMs & Turnstile
   useEffect(() => {
@@ -506,11 +516,6 @@ export default function App() {
                 <strong>{formatIQD(pricing.totalPriceIQD)}</strong>
               </div>
             </div>
-            {form.quantity >= 2 && (
-              <p className="setup-price-note">
-                🎉 تم تطبيق خصم الكمية! (سعر الساعة: {formatIQD(pricing.unitPriceIQD)})
-              </p>
-            )}
           </div>
 
           <form
@@ -629,22 +634,37 @@ export default function App() {
               </div>
 
               <div className="field">
-                <label htmlFor="quantity">
+                <label>
                   الكمية <b>*</b>
                 </label>
-                <select
-                  id="quantity"
-                  name="quantity"
-                  required
-                  value={form.quantity}
-                  onChange={(event) => update("quantity", Number(event.target.value))}
-                >
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
-                    <option key={n} value={n}>
-                      {n} {n === 1 ? "قطعة" : "قطع"} {n === 2 ? "(خصم 10 آلاف)" : n >= 3 ? "(خصم خاص)" : ""}
-                    </option>
-                  ))}
-                </select>
+                <div className="quantity-stepper" role="group" aria-label="تحديد الكمية">
+                  <button
+                    type="button"
+                    className="stepper-btn minus"
+                    onClick={() => update("quantity", Math.max(1, form.quantity - 1))}
+                    disabled={form.quantity <= 1}
+                    aria-label="تقليل الكمية"
+                  >
+                    <Minus size={16} />
+                  </button>
+                  <span className="stepper-value">{form.quantity}</span>
+                  <button
+                    type="button"
+                    className="stepper-btn plus"
+                    onClick={() => update("quantity", Math.min(maxStock, form.quantity + 1))}
+                    disabled={form.quantity >= maxStock}
+                    aria-label="زيادة الكمية"
+                  >
+                    <Plus size={16} />
+                  </button>
+                </div>
+                <div className="stock-hint">
+                  {maxStock <= 5 ? (
+                    <span className="stock-low">متبقي {maxStock} قطع فقط في المخزن</span>
+                  ) : (
+                    <span>الكمية المتوفرة: {maxStock} قطعة</span>
+                  )}
+                </div>
               </div>
             </div>
 
