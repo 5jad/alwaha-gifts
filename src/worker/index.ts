@@ -564,6 +564,24 @@ app.post('/api/admin/orders/:id/retry', async (c) => {
   });
 });
 
+// DELETE /api/admin/orders/:id
+app.delete('/api/admin/orders/:id', async (c) => {
+  const orderId = c.req.param('id');
+  const repo = new OrderRepository(c.env.DB);
+  const order = await repo.getOrderById(orderId);
+
+  if (!order) {
+    return c.json({ success: false, error: 'الطلب غير موجود.' }, 404);
+  }
+
+  await repo.deleteOrder(orderId);
+
+  return c.json({
+    success: true,
+    message: `تم حذف الطلب (${orderId}) بنجاح.`
+  });
+});
+
 // GET /api/admin/orders/export
 app.get('/api/admin/orders/export', async (c) => {
   const repo = new OrderRepository(c.env.DB);

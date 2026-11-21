@@ -159,6 +159,7 @@ export default function Admin() {
   const [totalRevenueIQD, setTotalRevenue] = useState(0);
   const [searchQuery, setSearchQuery]     = useState("");
   const [retryingId, setRetryingId]       = useState<string | null>(null);
+  const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
   const [expandedId, setExpandedId]       = useState<string | null>(null);
 
   // ── Products ─────────────────────────────────────────────────────────────
@@ -314,6 +315,26 @@ export default function Admin() {
       void loadAll();
     } catch (e: any) { flash("error", e?.message || "خطأ."); }
     finally { setRetryingId(null); }
+  }
+
+  async function deleteOrder(orderId: string) {
+    if (!window.confirm(`هل أنت متأكد من حذف الطلب (${orderId}) نهائياً من قاعدة البيانات؟`)) return;
+    setDeletingOrderId(orderId);
+    try {
+      const res = await fetch(`/api/admin/orders/${orderId}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+      const data = (await res.json()) as any;
+      if (!res.ok || !data.success) throw new Error(data.error || "فشل حذف الطلب.");
+      flash("success", data.message || `تم حذف الطلب (${orderId}) بنجاح.`);
+      setOrders((prev) => prev.filter((o) => o.id !== orderId));
+      setTotalOrders((prev) => Math.max(0, prev - 1));
+    } catch (e: any) {
+      flash("error", e?.message || "خطأ أثناء حذف الطلب.");
+    } finally {
+      setDeletingOrderId(null);
+    }
   }
 
   // ── Products actions ────────────────────────────────────────────────────
@@ -771,6 +792,29 @@ export default function Admin() {
                           <StatusBadge ok={!!order.sheet_sent}    label="شيتس" />
                           <StatusBadge ok={!!order.meta_sent}     label="ميتا" />
                         </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteOrder(order.id);
+                          }}
+                          disabled={deletingOrderId === order.id}
+                          className="admin-quiet-button"
+                          title="حذف الطلب"
+                          style={{
+                            padding: "4px 8px",
+                            fontSize: "0.75rem",
+                            color: "#dc2626",
+                            borderColor: "#fecaca",
+                            background: "#fff5f5"
+                          }}
+                        >
+                          {deletingOrderId === order.id ? (
+                            <LoaderCircle size={13} className="spin" />
+                          ) : (
+                            <><Trash2 size={13} /> حذف</>
+                          )}
+                        </button>
                         {expanded ? <ChevronUp size={15} style={{ color: "#78756e" }} /> : <ChevronDown size={15} style={{ color: "#78756e" }} />}
                       </div>
                     </div>
@@ -798,19 +842,39 @@ export default function Admin() {
                           <code style={{ fontSize: "0.68rem", fontFamily: "monospace", color: "#78756e", wordBreak: "break-all" }} dir="ltr">{order.idempotency_key}</code>
                         </div>
                         <div>
-                          <span>إعادة الإرسال اليدوي</span>
-                          <button
-                            type="button"
-                            onClick={() => retryOrder(order.id)}
-                            disabled={isRetrying}
-                            className="admin-quiet-button"
-                            style={{ fontSize: "0.78rem", padding: "0.3rem 0.75rem" }}
-                          >
-                            {isRetrying
-                              ? <><LoaderCircle size={13} className="spin" /> جارٍ…</>
-                              : <><RefreshCw size={13} /> إعادة إرسال القنوات</>
-                            }
-                          </button>
+                          <span>إجراءات الطلب</span>
+                          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                            <button
+                              type="button"
+                              onClick={() => retryOrder(order.id)}
+                              disabled={isRetrying}
+                              className="admin-quiet-button"
+                              style={{ fontSize: "0.78rem", padding: "0.3rem 0.75rem" }}
+                            >
+                              {isRetrying
+                                ? <><LoaderCircle size={13} className="spin" /> جارٍ…</>
+                                : <><RefreshCw size={13} /> إعادة إرسال القنوات</>
+                              }
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteOrder(order.id)}
+                              disabled={deletingOrderId === order.id}
+                              className="admin-quiet-button"
+                              style={{
+                                fontSize: "0.78rem",
+                                padding: "0.3rem 0.75rem",
+                                color: "#b91c1c",
+                                borderColor: "#fecaca",
+                                background: "#fff5f5"
+                              }}
+                            >
+                              {deletingOrderId === order.id
+                                ? <><LoaderCircle size={13} className="spin" /> جارٍ الحذف…</>
+                                : <><Trash2 size={13} /> حذف الطلب نهائياً</>
+                              }
+                            </button>
+                          </div>
                         </div>
                       </div>
                     )}

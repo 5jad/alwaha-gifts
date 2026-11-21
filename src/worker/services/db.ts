@@ -188,6 +188,17 @@ export class OrderRepository {
   }
 
   /**
+   * Deletes an order by its ID.
+   */
+  async deleteOrder(id: string): Promise<boolean> {
+    const res = await this.db.prepare(`
+      DELETE FROM orders WHERE id = ?
+    `).bind(id).run();
+
+    return (res.meta?.changes ?? 0) > 0;
+  }
+
+  /**
    * Increments retry counter and records timestamp.
    */
   async incrementRetryCount(id: string): Promise<void> {
