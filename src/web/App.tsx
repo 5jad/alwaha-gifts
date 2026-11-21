@@ -17,7 +17,6 @@ import {
 } from "../config/products";
 import ProductCards from "./components/ProductCards";
 import ProductGallery from "./components/ProductGallery";
-import PrivacySettings from "./components/PrivacySettings";
 import { IRAQ_GOVERNORATES, OrderSuccessResponse } from "../shared/types";
 import { initTracking, TrackingParams } from "./utils/tracking";
 import { MetaPixel } from "./utils/pixel";
@@ -48,9 +47,11 @@ const initialForm: OrderForm = {
 function StoreHeader({
   storeName,
   hasSelection,
+  onLogoClick,
 }: {
   storeName: string;
   hasSelection: boolean;
+  onLogoClick?: (e: React.MouseEvent) => void;
 }) {
   return (
     <>
@@ -58,7 +59,7 @@ function StoreHeader({
         <span className="announcement-dot" /> {storeName} — ساعات جدارية بتفاصيل تختارها بعناية
       </div>
       <header className="site-header">
-        <a className="brand" href="#top" aria-label={storeName}>
+        <a className="brand" href="#top" aria-label={storeName} onClick={onLogoClick}>
           <span className="brand-mark">
             <Clock3 size={20} strokeWidth={1.6} />
           </span>
@@ -95,11 +96,30 @@ export default function App() {
   const [confirmationOrderId, setConfirmationOrderId] = useState("");
   const [confirmationAmount, setConfirmationAmount] = useState(0);
   const [tracking, setTracking] = useState<TrackingParams>({ sourceUrl: "" });
-  const [trackingEnabled, setTrackingEnabled] = useState(true);
 
   const requestKey = useRef<string | null>(null);
   const hasFiredInitiateCheckout = useRef(false);
   const viewedProducts = useRef(new Set<string>());
+  const logoClicksRef = useRef(0);
+  const logoTimerRef = useRef<any>(null);
+
+  // Secret admin access: 5 clicks on logo within 2.5 seconds
+  const handleSecretLogoClick = (e: React.MouseEvent) => {
+    logoClicksRef.current += 1;
+    if (logoTimerRef.current) clearTimeout(logoTimerRef.current);
+
+    if (logoClicksRef.current >= 5) {
+      e.preventDefault();
+      logoClicksRef.current = 0;
+      window.history.pushState({}, '', '/admin');
+      window.dispatchEvent(new Event('popstate'));
+      return;
+    }
+
+    logoTimerRef.current = setTimeout(() => {
+      logoClicksRef.current = 0;
+    }, 2500);
+  };
 
   const product = PRODUCTS.find((item) => item.id === selectedProductId) ?? PRODUCTS[0];
   const selectedModel = product.models.find((model) => model.id === form.modelId) ?? product.models[0];
@@ -266,7 +286,11 @@ export default function App() {
 
   return (
     <main className="store-page">
-      <StoreHeader storeName={storeName} hasSelection={Boolean(product)} />
+      <StoreHeader
+        storeName={storeName}
+        hasSelection={Boolean(product)}
+        onLogoClick={handleSecretLogoClick}
+      />
 
       {/* 1. Clock Selection Cards (Exact previous design) */}
       <ProductCards
@@ -590,20 +614,13 @@ export default function App() {
 
       {/* Footer */}
       <footer className="site-footer">
-        <a className="brand footer-brand" href="#top">
+        <a className="brand footer-brand" href="#top" onClick={handleSecretLogoClick}>
           <span className="brand-mark">
             <Clock3 size={18} />
           </span>
           <strong>{storeName}</strong>
         </a>
         <span>ساعات جدارية تختارها بعناية — توصيل لجميع محافظات العراق.</span>
-        <PrivacySettings
-          trackingEnabled={trackingEnabled}
-          onTrackingChange={() => setTrackingEnabled(!trackingEnabled)}
-        />
-        <a href="/admin" className="header-cta" style={{ fontSize: "12px", color: "var(--gold)" }}>
-          إدارة المتجر <ArrowLeft size={14} />
-        </a>
       </footer>
 
       {/* Sticky Fast-Buy CTA Bar */}
