@@ -723,6 +723,12 @@ app.post('/api/admin/sheets-test', async (c) => {
     try {
       data = JSON.parse(text);
     } catch {
+      if (text.includes('تعذر العثور على دالة') || text.includes('Script function not found') || text.includes('doPost')) {
+        return c.json({
+          success: false,
+          error: 'تم الاتصال بتطبيق Google بنجاح، لكن ملف Code.gs في شيتك فارغ أو لم يُحفظ كإصدار جديد! (جوجل تقول: تعذر العثور على دالة doPost).'
+        }, 400);
+      }
       return c.json({
         success: false,
         error: `استجاب الرابط لكن ليس بصيغة JSON. يرجى التأكد من نشر تطبيق الويب واختيار Who has access: Anyone (أي شخص). نص الاستجابة: ${text.slice(0, 150)}`

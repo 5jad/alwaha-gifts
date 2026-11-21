@@ -61,7 +61,15 @@ export async function sendSheetsOrder(
       return { success: false, error: `HTTP ${res.status}: ${errText}` };
     }
 
-    const data = (await res.json()) as { success: boolean; duplicated?: boolean; error?: string };
+    const text = await res.text();
+    let data: { success: boolean; duplicated?: boolean; error?: string };
+    try {
+      data = JSON.parse(text);
+    } catch {
+      console.error(`[Sheets] Invalid JSON from Apps Script for order ${order.id}: ${text.slice(0, 200)}`);
+      return { success: false, error: 'استجاب الشيت بصفحة خطأ وليس بـ JSON' };
+    }
+
     if (!data.success) {
       console.error(`[Sheets] Webhook returned success=false for order ${order.id}: ${data.error}`);
       return { success: false, error: data.error };
