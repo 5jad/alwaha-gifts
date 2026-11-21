@@ -668,13 +668,6 @@ export default function App() {
                     <Plus size={16} />
                   </button>
                 </div>
-                <div className="stock-hint">
-                  {maxStock <= 5 ? (
-                    <span className="stock-low">متبقي {maxStock} قطع فقط في المخزن</span>
-                  ) : (
-                    <span>الكمية المتوفرة: {maxStock} قطعة</span>
-                  )}
-                </div>
               </div>
             </div>
 

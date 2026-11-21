@@ -255,7 +255,7 @@ app.post('/api/order', async (c) => {
   if (data.quantity > availableStock) {
     return c.json({
       success: false,
-      error: `عذراً، الكمية المطلوبة (${data.quantity}) تتجاوز المتوفر في المخزن. المتبقي لهذا الموديل هو (${availableStock}) قطع فقط.`
+      error: 'عذراً، الكمية المطلوبة تتجاوز الحد الأقصى المتوفر حالياً في المخزن لهذا الموديل.'
     }, 400);
   }
 
