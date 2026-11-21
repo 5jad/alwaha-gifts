@@ -14,8 +14,8 @@ import { OrderResponse, OrderSuccessResponse } from '../shared/types';
 
 const app = new Hono<{ Bindings: Env }>();
 
-// 1. Security Headers
-app.use('*', secureHeaders({
+// 1. Security Headers (applied to API routes to avoid mutating immutable static asset headers)
+app.use('/api/*', secureHeaders({
   xFrameOptions: 'DENY',
   xContentTypeOptions: 'nosniff',
   referrerPolicy: 'strict-origin-when-cross-origin',
@@ -760,7 +760,8 @@ app.delete('/api/admin/products/:id', async (c) => {
 // Fallback route: serve static assets if ASSETS binding exists
 app.all('*', async (c) => {
   if (c.env.ASSETS) {
-    return c.env.ASSETS.fetch(c.req.raw);
+    const res = await c.env.ASSETS.fetch(c.req.raw);
+    return new Response(res.body, res);
   }
   return c.text('Not Found', 404);
 });
