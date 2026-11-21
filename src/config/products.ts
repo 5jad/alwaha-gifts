@@ -62,7 +62,7 @@ export const DEFAULT_PROMISES: PromiseItem[] = [
 ];
 
 export const STORE_CONFIG = {
-  storeName: "متجر الأناقة",
+  storeName: "الواحة للهداية",
   subtitle: "ساعات جدارية فاخرة",
   tagline: "ساعات جدارية بتفاصيل تختارها بعناية",
   currencyAr: "د.ع",
@@ -72,7 +72,7 @@ export const PRODUCTS: StorefrontProduct[] = [
   {
     id: "royal-sunburst-3d",
     isPublished: true,
-    storeName: "متجر الأناقة",
+    storeName: "الواحة للهداية",
     category: "ساعة جدارية ملكية",
     productName: "ساعة إشعاع الشمس الملكية (Sunburst Luxury 3D)",
     nameAr: "ساعة إشعاع الشمس الملكية (Sunburst Luxury 3D)",
@@ -137,7 +137,7 @@ export const PRODUCTS: StorefrontProduct[] = [
   {
     id: "nordic-minimalist",
     isPublished: true,
-    storeName: "متجر الأناقة",
+    storeName: "الواحة للهداية",
     category: "ساعة جدارية نورديك",
     productName: "ساعة النورديك الدائرية الهادئة (Nordic Minimalist)",
     nameAr: "ساعة النورديك الدائرية الهادئة (Nordic Minimalist)",
@@ -187,7 +187,7 @@ export const PRODUCTS: StorefrontProduct[] = [
   {
     id: "geometric-diamond",
     isPublished: true,
-    storeName: "متجر الأناقة",
+    storeName: "الواحة للهداية",
     category: "ساعة جدارية مودرن",
     productName: "ساعة الألماس الهندسي ثلاثية الأبعاد (Geometric 3D)",
     nameAr: "ساعة الألماس الهندسي ثلاثية الأبعاد (Geometric 3D)",

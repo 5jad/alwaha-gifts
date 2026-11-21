@@ -249,7 +249,7 @@ export class ProductRepository {
       return results.map((row) => ({
         id: row.id,
         isPublished: Boolean(row.is_published),
-        storeName: 'متجر الأناقة',
+        storeName: 'الواحة للهداية',
         category: row.category,
         productName: row.product_name,
         nameAr: row.product_name,

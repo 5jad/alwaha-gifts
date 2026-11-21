@@ -71,7 +71,7 @@ export function buildTelegramMessage(order: {
   utmSource?: string;
   utmCampaign?: string;
 }): string {
-  const store = order.storeName || 'متجر الأناقة للساعات الجدارية';
+  const store = order.storeName || 'الواحة للهداية';
   const productName = order.productName || 'ساعة حائط فاخرة';
   const { full: dateTimeBaghdad } = formatBaghdadDateTime(new Date(order.createdAt * 1000));
 
