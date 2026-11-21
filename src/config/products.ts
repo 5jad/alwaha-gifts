@@ -14,6 +14,7 @@ export interface StorefrontModel {
   name: string;
   colors: string[];
   stock: number;
+  colorsRaw?: string;
 }
 
 export interface StorefrontProduct {

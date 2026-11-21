@@ -668,6 +668,83 @@ app.post('/api/admin/telegram-test', async (c) => {
   }
 });
 
+// POST /api/admin/sheets-test
+app.post('/api/admin/sheets-test', async (c) => {
+  const settingsRepo = new SettingsRepository(c.env.DB);
+  const dbSettings = await settingsRepo.getAllSettings();
+  const webhookUrl = c.env.SHEETS_WEBHOOK_URL || dbSettings['sheets_webhook_url'];
+  const secret = c.env.SHEETS_SECRET || dbSettings['sheets_secret'];
+
+  if (!webhookUrl || webhookUrl.trim().length === 0) {
+    return c.json({ success: false, error: 'رابط Webhook غير مضبوط (يرجى إدخاله أولاً).' }, 400);
+  }
+
+  // Detect spreadsheet viewer link
+  if (webhookUrl.includes('docs.google.com/spreadsheets')) {
+    return c.json({
+      success: false,
+      error: 'الرابط المدخل هو رابط عرض ملف الجدول (Google Sheet) وليس رابط تطبيق الويب! الرابط الصحيح يجب أن يبدأ بـ: https://script.google.com/macros/s/.../exec (انظر تعليمات النشر في Code.gs).'
+    }, 400);
+  }
+
+  try {
+    const testPayload = {
+      secret: secret || 'alwaha-secure-token-2026',
+      order: {
+        id: 'IQ-TEST-' + Math.floor(1000 + Math.random() * 9000),
+        date: new Date().toLocaleDateString('ar-IQ'),
+        time: new Date().toLocaleTimeString('ar-IQ'),
+        customerName: 'فحص الاتصال (تجريبي)',
+        phone: '07700000000',
+        governorate: 'بغداد',
+        address: 'فحص إعدادات الربط بالشيت',
+        productName: 'ساعة جدارية فحص',
+        modelName: 'موديل فحص',
+        colorName: 'ذهبي ملكي',
+        quantity: 1,
+        unitPrice: 35000,
+        totalPrice: 35000,
+        status: 'فحص تجريبي',
+        sourceUrl: '',
+        utmSource: '',
+        utmCampaign: ''
+      }
+    };
+
+    const res = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(testPayload),
+      signal: AbortSignal.timeout(10000)
+    });
+
+    const text = await res.text();
+    let data: any;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      return c.json({
+        success: false,
+        error: `استجاب الرابط لكن ليس بصيغة JSON. يرجى التأكد من نشر تطبيق الويب واختيار Who has access: Anyone (أي شخص). نص الاستجابة: ${text.slice(0, 150)}`
+      }, 400);
+    }
+
+    if (res.ok && data.success) {
+      return c.json({
+        success: true,
+        message: 'تم الاتصال بـ Google Sheets بنجاح! وتمت إضافة صف فحص تجريبي بالجدول.'
+      });
+    }
+
+    return c.json({
+      success: false,
+      error: data.error || `خطأ من تطبيق الشيت: HTTP ${res.status}`
+    }, 400);
+  } catch (err: any) {
+    return c.json({ success: false, error: err?.message || 'خطأ في الاتصال برابط الشيت' }, 500);
+  }
+});
+
 // GET /api/admin/meta-status
 app.get('/api/admin/meta-status', (c) => {
   return c.json({

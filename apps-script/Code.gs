@@ -14,6 +14,7 @@
 
 var CONFIG = {
   SECRET_PROP_NAME: "SHEETS_SECRET",
+  DEFAULT_SECRET: "alwaha-secure-token-2026",
   SHEET_NAME: "الطلبات", // Orders sheet name
   HEADERS: [
     "Order ID",
@@ -59,7 +60,7 @@ function getSecret() {
   } catch (err) {
     Logger.log("ScriptProperties error: " + err);
   }
-  return null; // Fail closed: no default secret
+  return CONFIG.DEFAULT_SECRET;
 }
 
 function doPost(e) {

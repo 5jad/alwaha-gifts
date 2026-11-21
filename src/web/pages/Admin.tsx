@@ -177,6 +177,7 @@ export default function Admin() {
   const [settingsBusy, setSettingsBusy]   = useState(false);
   const [tgTestBusy, setTgTestBusy]       = useState(false);
   const [tgBotReady, setTgBotReady]       = useState(false);
+  const [sheetsTestBusy, setSheetsTestBusy] = useState(false);
   const [metaInfo, setMetaInfo]           = useState<any>(null);
 
   // ── Promise Strip Settings ───────────────────────────────────────────────
@@ -339,13 +340,22 @@ export default function Admin() {
 
   // ── Products actions ────────────────────────────────────────────────────
   function openAddProduct() {
-    setEditProduct(blankProduct());
+    const bp = blankProduct();
+    const populatedModels = (bp.models || []).map((m) => ({
+      ...m,
+      colorsRaw: (m.colors || []).join(" / "),
+    }));
+    setEditProduct({ ...bp, models: populatedModels });
     setIsEditMode(false);
     setShowProductModal(true);
   }
 
   function openEditProduct(p: StorefrontProduct) {
-    setEditProduct({ ...p });
+    const populatedModels = (p.models || []).map((m) => ({
+      ...m,
+      colorsRaw: (m.colors || []).join(" / "),
+    }));
+    setEditProduct({ ...p, models: populatedModels });
     setIsEditMode(true);
     setShowProductModal(true);
   }
@@ -403,9 +413,16 @@ export default function Admin() {
     e.preventDefault();
     setProductBusy(true);
     try {
+      const sanitizedPayload = {
+        ...editProduct,
+        models: (editProduct.models || []).map((m) => {
+          const { colorsRaw, ...rest } = m;
+          return rest;
+        }),
+      };
       const url    = isEditMode ? `/api/admin/products/${editProduct.id}` : "/api/admin/products";
       const method = isEditMode ? "PUT" : "POST";
-      const res    = await fetch(url, { method, headers: authHeaders(), body: JSON.stringify(editProduct) });
+      const res    = await fetch(url, { method, headers: authHeaders(), body: JSON.stringify(sanitizedPayload) });
       const data   = await res.json() as any;
       if (!res.ok || !data.success) throw new Error(data.error || "فشل الحفظ.");
       flash("success", data.message);
@@ -478,6 +495,17 @@ export default function Admin() {
     finally { setTgTestBusy(false); }
   }
 
+  async function testSheets() {
+    setSheetsTestBusy(true);
+    try {
+      const res = await fetch("/api/admin/sheets-test", { method: "POST", headers: authHeaders() });
+      const data = await res.json() as any;
+      if (!res.ok || !data.success) throw new Error(data.error || "فشل اختبار الشيت.");
+      flash("success", data.message);
+    } catch (e: any) { flash("error", e?.message || "خطأ في الاتصال بالشيت."); }
+    finally { setSheetsTestBusy(false); }
+  }
+
   // ── Derived ──────────────────────────────────────────────────────────────
   const filteredOrders = orders.filter((o) => {
     if (!searchQuery.trim()) return true;
@@ -511,14 +539,20 @@ export default function Admin() {
     setEditProduct((p) => ({ ...p, models: ms }));
   }
   function setModelColors(i: number, raw: string) {
-    const colors = raw.split(",").map((c) => c.trim()).filter(Boolean);
-    setModel(i, "colors", colors);
+    const ms = [...(editProduct.models || [])];
+    const colors = raw.split(/[/,،]+/).map((c) => c.trim()).filter(Boolean);
+    ms[i] = {
+      ...ms[i],
+      colors: colors.length > 0 ? colors : (raw.trim() ? [raw.trim()] : []),
+      colorsRaw: raw,
+    };
+    setEditProduct((p) => ({ ...p, models: ms }));
   }
   function addModel() {
     const ms = editProduct.models || [];
     setEditProduct((p) => ({
       ...p,
-      models: [...ms, { id: `model-${ms.length + 1}`, name: "", colors: [""], stock: 10 }],
+      models: [...ms, { id: `model-${ms.length + 1}`, name: "", colors: [""], colorsRaw: "", stock: 10 }],
     }));
   }
   function removeModel(i: number) {
@@ -1012,15 +1046,53 @@ export default function Admin() {
               <div className="admin-settings-card-header">
                 <Check size={17} className="text-gold" />
                 <h3>Google Sheets Webhook</h3>
-                <span className={`admin-product-badge ${settings.sheets_webhook_url ? "published" : "draft"}`}>
-                  {settings.sheets_webhook_url ? "مضبوط" : "غير مضبوط (اختياري)"}
+                <span
+                  className={`admin-product-badge ${
+                    !settings.sheets_webhook_url
+                      ? "draft"
+                      : settings.sheets_webhook_url.includes("docs.google.com/spreadsheets")
+                      ? "unpublished"
+                      : "published"
+                  }`}
+                >
+                  {!settings.sheets_webhook_url
+                    ? "غير مضبوط (اختياري)"
+                    : settings.sheets_webhook_url.includes("docs.google.com/spreadsheets")
+                    ? "رابط غير صالح (رابط جدول وليس Webhook)"
+                    : "مضبوط ومفعل"}
                 </span>
               </div>
               <p className="admin-muted" style={{ fontSize: "0.82rem" }}>
-                رابط تطبيق ويب Google Apps Script الذي يستقبل ويسجل صفوف الطلبات في الشيت.
+                رابط تطبيق ويب Google Apps Script الذي يستقبل ويسجل صفوف الطلبات تلقائياً في الشيت.
               </p>
+
+              {settingsForm.sheets_webhook_url?.includes("docs.google.com/spreadsheets") && (
+                <div
+                  style={{
+                    background: "#fef2f2",
+                    border: "1px solid #fecaca",
+                    color: "#991b1b",
+                    padding: "0.85rem",
+                    borderRadius: "6px",
+                    marginTop: "0.75rem",
+                    fontSize: "0.83rem",
+                    lineHeight: "1.6",
+                  }}
+                >
+                  <strong>⚠️ تنبيه: الرابط المدخل هو رابط عرض الجدول في المتصفح!</strong>
+                  <br />
+                  سيرفر المتجر لا يستطيع الكتابة في رابط العرض. الرابط المطلوب هو <b>رابط تطبيق ويب Apps Script</b> المنشور بصلاحية Anyone.
+                  <br />
+                  الرابط الصحيح يجب أن يبدأ بـ:
+                  <br />
+                  <code dir="ltr" style={{ color: "#b91c1c", fontWeight: 700, wordBreak: "break-all" }}>
+                    https://script.google.com/macros/s/.../exec
+                  </code>
+                </div>
+              )}
+
               <form onSubmit={saveSettings} className="admin-form" style={{ marginTop: "1rem" }}>
-                <label>رابط Webhook (Sheets URL)</label>
+                <label>رابط Webhook (Apps Script Web App URL)</label>
                 <input
                   type="url"
                   placeholder="https://script.google.com/macros/s/…/exec"
@@ -1031,14 +1103,30 @@ export default function Admin() {
                 <label style={{ marginTop: "0.75rem" }}>كلمة السر المشتركة (Sheets Secret)</label>
                 <input
                   type="text"
-                  placeholder="my-secret-token"
+                  placeholder="alwaha-secure-token-2026"
                   value={settingsForm.sheets_secret}
                   onChange={(e) => setSettingsForm((s) => ({ ...s, sheets_secret: e.target.value }))}
                   dir="ltr"
                 />
-                <button className="admin-primary" type="submit" disabled={settingsBusy} style={{ marginTop: "0.75rem" }}>
-                  {settingsBusy ? <><LoaderCircle size={15} className="spin" /> حفظ…</> : <><Check size={15} /> حفظ إعدادات الشيتس</>}
-                </button>
+                <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem" }}>
+                  <button className="admin-primary" type="submit" disabled={settingsBusy} style={{ flex: 1 }}>
+                    {settingsBusy ? <><LoaderCircle size={15} className="spin" /> حفظ…</> : <><Check size={15} /> حفظ إعدادات الشيتس</>}
+                  </button>
+                  <button
+                    type="button"
+                    className="admin-quiet-button"
+                    onClick={testSheets}
+                    disabled={sheetsTestBusy || !settingsForm.sheets_webhook_url}
+                    title="فحص الاتصال بالشيت وإضافة صف تجريبي"
+                    style={{ flexShrink: 0 }}
+                  >
+                    {sheetsTestBusy ? (
+                      <><LoaderCircle size={14} className="spin" /> جارٍ الفحص…</>
+                    ) : (
+                      <><Send size={14} /> فحص الاتصال بالشيت</>
+                    )}
+                  </button>
+                </div>
               </form>
             </div>
 
@@ -1340,11 +1428,12 @@ export default function Admin() {
                         <Trash2 size={14} />
                       </button>
                     </div>
-                    <label>الألوان المتوفرة لهذا الموديل (اكتب الألوان وافصل بينها بفاصلة)</label>
+                    <label>الألوان المتوفرة لهذا الموديل (افصل بين الألوان بـ /)</label>
                     <input
-                      value={(m.colors || []).join(", ")}
+                      value={m.colorsRaw !== undefined ? m.colorsRaw : (m.colors || []).join(" / ")}
                       onChange={(e) => setModelColors(i, e.target.value)}
-                      placeholder="مثال: ذهبي ملكي, أسود مطفي, فضي كريستال"
+                      placeholder="مثال: ذهبي ملكي / أسود مطفي / فضي كريستال"
+                      dir="rtl"
                     />
                   </div>
                 ))}
