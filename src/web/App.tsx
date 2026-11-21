@@ -59,7 +59,13 @@ function StoreHeader({
         <span className="announcement-dot" /> {storeName} — ساعات جدارية بتفاصيل تختارها بعناية
       </div>
       <header className="site-header">
-        <a className="brand" href="#top" aria-label={storeName} onClick={onLogoClick}>
+        <button
+          type="button"
+          className="brand"
+          aria-label={storeName}
+          onClick={onLogoClick}
+          style={{ background: "transparent", border: "none", padding: 0, textAlign: "inherit", cursor: "pointer" }}
+        >
           <span className="brand-mark">
             <Clock3 size={20} strokeWidth={1.6} />
           </span>
@@ -67,7 +73,7 @@ function StoreHeader({
             <strong>{storeName}</strong>
             <small>ساعات جدارية فاخرة</small>
           </span>
-        </a>
+        </button>
         <nav className="desktop-nav" aria-label="التنقل الرئيسي">
           <a href="#product-selection">اختيار الساعة</a>
           {hasSelection && (
@@ -105,11 +111,12 @@ export default function App() {
 
   // Secret admin access: 5 clicks on logo within 2.5 seconds
   const handleSecretLogoClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
     logoClicksRef.current += 1;
     if (logoTimerRef.current) clearTimeout(logoTimerRef.current);
 
     if (logoClicksRef.current >= 5) {
-      e.preventDefault();
       logoClicksRef.current = 0;
       window.history.pushState({}, '', '/admin');
       window.dispatchEvent(new Event('popstate'));
@@ -614,12 +621,17 @@ export default function App() {
 
       {/* Footer */}
       <footer className="site-footer">
-        <a className="brand footer-brand" href="#top" onClick={handleSecretLogoClick}>
+        <button
+          type="button"
+          className="brand footer-brand"
+          onClick={handleSecretLogoClick}
+          style={{ background: "transparent", border: "none", padding: 0, textAlign: "inherit", cursor: "pointer" }}
+        >
           <span className="brand-mark">
             <Clock3 size={18} />
           </span>
           <strong>{storeName}</strong>
-        </a>
+        </button>
         <span>ساعات جدارية تختارها بعناية — توصيل لجميع محافظات العراق.</span>
       </footer>
 
