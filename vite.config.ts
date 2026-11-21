@@ -6,6 +6,7 @@ import path from 'path';
 export default defineConfig({
   plugins: [react()],
   root: './src/web',
+  envDir: '../../',  // قراءة .env من جذر المشروع
   publicDir: '../../public',
   resolve: {
     alias: {
