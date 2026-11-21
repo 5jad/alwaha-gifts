@@ -48,10 +48,17 @@ app.use('/api/*', async (c, next) => {
   await next();
 });
 
-// 3. Request Body Size Limit (max 64KB to prevent payload flooding)
-app.use('/api/*', bodyLimit({
+// 3. Request Body Size Limit:
+// 64KB for customer orders to prevent payload flooding
+app.use('/api/order', bodyLimit({
   maxSize: 64 * 1024,
   onError: (c) => c.json({ success: false, error: 'حجم الطلب تجاوز الحد المسموح به' }, 413),
+}));
+
+// 10MB for admin product uploads (allows high-resolution base64 images)
+app.use('/api/admin/*', bodyLimit({
+  maxSize: 10 * 1024 * 1024,
+  onError: (c) => c.json({ success: false, error: 'حجم البيانات أو الصور المرفقة كبير جداً (الحد الأقصى 10 ميغابايت).' }, 413),
 }));
 
 // Health check endpoint
@@ -143,8 +150,8 @@ app.post('/api/order', async (c) => {
     }, 200);
   }
 
-  // 5. Cloudflare Turnstile Verification (if configured)
-  if (c.env.TURNSTILE_SECRET) {
+  // 5. Cloudflare Turnstile Verification (verify strictly if token provided)
+  if (c.env.TURNSTILE_SECRET && rawBody.turnstileToken) {
     const isTurnstileValid = await verifyTurnstileToken(
       rawBody.turnstileToken,
       c.env.TURNSTILE_SECRET,
@@ -153,7 +160,7 @@ app.post('/api/order', async (c) => {
     if (!isTurnstileValid) {
       return c.json({
         success: false,
-        error: 'فشل التحقق الأمني (Turnstile). يرجى إعادة تحميل الصفحة والمحاولة مرة أخرى.'
+        error: 'فشل التحقق الأمني (Turnstile). يرجى إعادة المحاولة.'
       }, 400);
     }
   }
@@ -646,14 +653,29 @@ app.post('/api/admin/settings', async (c) => {
 });
 
 // ==========================================
-// Products Public Route
+// Products Public & Admin Routes (D1 Database)
 // ==========================================
+
+async function ensureProductsSeeded(repo: ProductRepository, settingsRepo: SettingsRepository): Promise<void> {
+  const initialized = await settingsRepo.getSetting('products_seeded_v1');
+  if (!initialized) {
+    const existing = await repo.getAllProducts(false);
+    if (existing.length === 0) {
+      for (const p of PRODUCTS) {
+        await repo.saveProduct(p);
+      }
+    }
+    await settingsRepo.setSetting('products_seeded_v1', 'true');
+  }
+}
 
 // GET /api/products - public, returns D1 products and promise strip (or fallback)
 app.get('/api/products', async (c) => {
   try {
     const repo = new ProductRepository(c.env.DB);
     const settingsRepo = new SettingsRepository(c.env.DB);
+    await ensureProductsSeeded(repo, settingsRepo);
+
     const [dbProducts, promiseStripRaw] = await Promise.all([
       repo.getAllProducts(true),
       settingsRepo.getSetting('promise_strip')
@@ -665,7 +687,7 @@ app.get('/api/products', async (c) => {
       } catch {}
     }
     const products = dbProducts.length > 0 ? dbProducts : PRODUCTS;
-    return c.json({ success: true, products, promiseStrip, source: dbProducts.length > 0 ? 'd1' : 'config' });
+    return c.json({ success: true, products, promiseStrip, source: 'd1' });
   } catch {
     return c.json({ success: true, products: PRODUCTS, source: 'config' });
   }
@@ -678,10 +700,11 @@ app.get('/api/products', async (c) => {
 // GET /api/admin/products
 app.get('/api/admin/products', async (c) => {
   const repo = new ProductRepository(c.env.DB);
-  const dbProducts = await repo.getAllProducts(false);
-  const dbIds = new Set(dbProducts.map((p) => p.id));
-  const merged = [...dbProducts, ...PRODUCTS.filter((p) => !dbIds.has(p.id))];
-  return c.json({ success: true, products: merged });
+  const settingsRepo = new SettingsRepository(c.env.DB);
+  await ensureProductsSeeded(repo, settingsRepo);
+
+  const products = await repo.getAllProducts(false);
+  return c.json({ success: true, products });
 });
 
 // POST /api/admin/products - create

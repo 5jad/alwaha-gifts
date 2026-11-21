@@ -158,6 +158,8 @@ export default function App() {
   const viewedProducts = useRef(new Set<string>());
   const logoClicksRef = useRef(0);
   const logoTimerRef = useRef<any>(null);
+  const turnstileContainerRef = useRef<HTMLDivElement>(null);
+  const turnstileWidgetId = useRef<string | null>(null);
 
   // Secret admin access: 5 clicks on logo within 2.5 seconds
   const handleSecretLogoClick = (e: React.MouseEvent) => {
@@ -212,7 +214,30 @@ export default function App() {
     (window as any).onTurnstileSuccess = (token: string) => {
       setTurnstileToken(token);
     };
-  }, []);
+
+    if (turnstileSiteKey) {
+      const checkTurnstile = () => {
+        if ((window as any).turnstile && turnstileContainerRef.current && !turnstileWidgetId.current) {
+          try {
+            turnstileWidgetId.current = (window as any).turnstile.render(turnstileContainerRef.current, {
+              sitekey: turnstileSiteKey,
+              callback: (token: string) => {
+                setTurnstileToken(token);
+              },
+              theme: "light",
+              language: "ar",
+            });
+          } catch (err) {
+            console.warn("[Turnstile render error]", err);
+          }
+        }
+      };
+
+      checkTurnstile();
+      const interval = setInterval(checkTurnstile, 400);
+      return () => clearInterval(interval);
+    }
+  }, [turnstileSiteKey]);
 
   // Set default model and color when product changes
   useEffect(() => {
@@ -656,12 +681,8 @@ export default function App() {
             {/* Cloudflare Turnstile */}
             {turnstileSiteKey && (
               <div
-                className="cf-turnstile"
-                data-sitekey={turnstileSiteKey}
-                data-callback="onTurnstileSuccess"
-                data-theme="light"
-                data-language="ar"
-                style={{ margin: "0.5rem auto", display: "flex", justifyContent: "center" }}
+                ref={turnstileContainerRef}
+                style={{ margin: "0.5rem auto", display: "flex", justifyContent: "center", minHeight: "65px" }}
               />
             )}
 
