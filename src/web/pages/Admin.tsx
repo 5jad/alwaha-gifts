@@ -968,7 +968,7 @@ export default function Admin() {
               <div className="admin-meta-info">
                 <div><span>Pixel ID</span><code>{metaInfo?.pixelId || "—"}</code></div>
                 <div><span>API Version</span><code dir="ltr">{metaInfo?.apiVersion || "v21.0"}</code></div>
-                <div><span>Currency</span><code dir="ltr">{metaInfo?.currency || "USD"} (Rate: {metaInfo?.usdRate || "1310"})</code></div>
+                <div><span>Currency</span><code dir="ltr">{metaInfo?.currency || "USD"} (Rate: {metaInfo?.usdRate || "1520"}{metaInfo?.commissionPercent && metaInfo.commissionPercent !== "0" ? ` +${metaInfo.commissionPercent}% عمولة` : ""})</code></div>
                 {metaInfo?.testEventCode && (
                   <div><span>Test Event Code</span><code dir="ltr">{metaInfo.testEventCode}</code></div>
                 )}

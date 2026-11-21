@@ -556,7 +556,8 @@ app.get('/api/admin/meta-status', (c) => {
     capiConfigured: Boolean(c.env.META_PIXEL_ID && c.env.META_CAPI_ACCESS_TOKEN),
     apiVersion: c.env.META_API_VERSION || 'v21.0',
     currency: c.env.META_CURRENCY || 'USD',
-    usdRate: c.env.USD_RATE || '1310',
+    usdRate: c.env.USD_RATE || '1520',
+    commissionPercent: c.env.PAYMENT_COMMISSION_PERCENT || '0',
     testEventCode: c.env.META_TEST_EVENT_CODE || null
   });
 });
