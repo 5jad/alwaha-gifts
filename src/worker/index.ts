@@ -8,7 +8,7 @@ import { checkRateLimit } from './services/rate-limiter';
 import { sendTelegramOrder } from './services/telegram';
 import { sendSheetsOrder } from './services/sheets';
 import { sendMetaCapiOrder, extractMetaCookies } from './services/meta-capi';
-import { calculateOrderPrice, PRODUCT } from '../config/products';
+import { calculateOrderPrice, PRODUCT, PRODUCTS } from '../config/products';
 import { OrderResponse, OrderSuccessResponse } from '../shared/types';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -57,7 +57,7 @@ app.use('/api/*', bodyLimit({
 app.get('/api/health', (c) => {
   return c.json({
     status: 'ok',
-    store: c.env.STORE_NAME_AR || PRODUCT.nameAr,
+    store: c.env.STORE_NAME_AR || PRODUCT.productName,
     time: new Date().toISOString()
   });
 });
@@ -94,8 +94,9 @@ app.post('/api/order', async (c) => {
   const existingOrder = await repo.findByIdempotencyKey(idempotencyKey);
   if (existingOrder) {
     console.log(`[Order] Idempotent replay for key: ${idempotencyKey}, returning existing order: ${existingOrder.id}`);
-    const model = PRODUCT.models.find(m => m.id === existingOrder.model_id)?.nameAr || existingOrder.model_id;
-    const color = PRODUCT.colors.find(c => c.id === existingOrder.color_id)?.nameAr || existingOrder.color_id;
+    const existingProduct = PRODUCTS.find(p => p.id === existingOrder.product_id) || PRODUCT;
+    const model = existingProduct.models.find(m => m.id === existingOrder.model_id)?.name || existingOrder.model_id;
+    const color = existingOrder.color_id;
 
     const response: OrderResponse = {
       success: true,
@@ -289,8 +290,9 @@ app.post('/api/order', async (c) => {
   })());
 
   // 13. Success Response to Customer
-  const modelName = PRODUCT.models.find(m => m.id === data.modelId)?.nameAr || data.modelId;
-  const colorName = PRODUCT.colors.find(c => c.id === data.colorId)?.nameAr || data.colorId;
+  const targetProduct = PRODUCTS.find(p => p.id === data.productId) || PRODUCT;
+  const modelName = targetProduct.models.find(m => m.id === data.modelId)?.name || data.modelId;
+  const colorName = data.colorId;
 
   const successResponse: OrderSuccessResponse = {
     success: true,

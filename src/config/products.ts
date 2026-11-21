@@ -1,212 +1,239 @@
-// Product configuration for the wall clock landing page
-// Edit prices, images, models, and colors here without touching code.
+// Product configuration for the store
+// Edit prices, clocks, models, colors, and features directly here without touching any other code.
 
-export interface ProductModel {
-  id: string;
-  nameAr: string;
-  badge?: string;
-  image: string;
+export interface StorefrontImage {
+  id: number;
+  url: string;
+  isActive: boolean;
+  fit?: "contain" | "cover";
+  scale?: number;
 }
 
-export interface ProductColor {
+export interface StorefrontModel {
   id: string;
-  nameAr: string;
-  hex: string;
-  border?: string;
+  name: string;
+  colors: string[];
+  stock: number;
 }
 
-export interface ProductFeature {
-  titleAr: string;
-  descAr: string;
-  icon: string;
-}
-
-export interface ProductConfig {
+export interface StorefrontProduct {
   id: string;
-  nameAr: string;
-  taglineAr: string;
-  basePriceIQD: number;
+  isPublished: boolean;
+  storeName: string;
+  category: string;
+  productName: string;
+  nameAr: string; // alias
+  tagline: string;
+  description: string;
+  priceIQD: number;
+  basePriceIQD: number; // alias
   compareAtPriceIQD: number;
-  currencyAr: string;
-  freeShipping: boolean;
-  warrantyMonths: number;
-  descriptionAr: string;
-  galleryImages: {
-    url: string;
-    altAr: string;
-    captionAr: string;
-  }[];
-  models: ProductModel[];
-  colors: ProductColor[];
-  features: ProductFeature[];
-  discounts: {
-    minQuantity: number;
-    discountPerUnitIQD: number;
-    badgeAr?: string;
-  }[];
-  faq: {
-    qAr: string;
-    aAr: string;
-  }[];
+  features: string[];
+  images: StorefrontImage[];
+  models: StorefrontModel[];
 }
 
-export const PRODUCT: ProductConfig = {
-  id: "royal-wall-clock-3d",
-  nameAr: "ساعة الحائط الملكية الفاخرة ثلاثية الأبعاد (3D Modern Luxury)",
-  taglineAr: "لمسة فخامة وأناقة عصرية تحول جدار منزلك إلى تحفة فنية راقية",
-  basePriceIQD: 35000,
-  compareAtPriceIQD: 55000,
+export const STORE_CONFIG = {
+  storeName: "متجر الأناقة",
+  subtitle: "ساعات جدارية فاخرة",
+  tagline: "ساعات جدارية بتفاصيل تختارها بعناية",
   currencyAr: "د.ع",
-  freeShipping: true,
-  warrantyMonths: 12,
-  descriptionAr: "ساعة حائط عصرية بتصميم هندسي فريد يجمع بين الخشب الطبيعي والمعدن المقاوم للصدأ مع حركة عقارب صامتة تماماً (Silent Quartz Movement) خالية من أي صوت دقات مزعجة. مثالية لغرفة المعيشة، المكاتب، والديوانيات.",
-  galleryImages: [
-    {
-      url: "https://images.unsplash.com/photo-1563861826100-9cb868fdbe1c?auto=format&fit=crop&w=1000&q=80",
-      altAr: "ساعة الحائط الملكية الذهبية على جدار صالون عصري",
-      captionAr: "تصميم ملكي راقٍ مع تفاصيل ذهبية لامعة"
-    },
-    {
-      url: "https://images.unsplash.com/photo-1509042239860-f550ce710b93?auto=format&fit=crop&w=1000&q=80",
-      altAr: "ساعة حائط باللون الأسود الملكي",
-      captionAr: "اللون الأسود المطفي مع عقارب نحاسية أنيقة"
-    },
-    {
-      url: "https://images.unsplash.com/photo-1533090161767-e6ffed986c88?auto=format&fit=crop&w=1000&q=80",
-      altAr: "تفاصيل العقارب الصامتة والتجميع المتقن",
-      captionAr: "ماكينة كوارتز فائقة الهدوء وضمان حقيقي لمدة سنة"
-    },
-    {
-      url: "https://images.unsplash.com/photo-1585128792020-803d29415281?auto=format&fit=crop&w=1000&q=80",
-      altAr: "تناسق رائع مع الأثاث والديكور الداخلي",
-      captionAr: "قطر 50 سم لإطلالة واضحة وجذابة تلفت الأنظار"
-    }
-  ],
-  models: [
-    {
-      id: "model-sunburst",
-      nameAr: "موديل إشعاع الشمس (Sunburst Luxury)",
-      badge: "الأكثر طلباً",
-      image: "https://images.unsplash.com/photo-1563861826100-9cb868fdbe1c?auto=format&fit=crop&w=600&q=80"
-    },
-    {
-      id: "model-minimalist",
-      nameAr: "موديل النورديك الدائري (Nordic Minimalist)",
-      badge: "عصري هادئ",
-      image: "https://images.unsplash.com/photo-1509042239860-f550ce710b93?auto=format&fit=crop&w=600&q=80"
-    },
-    {
-      id: "model-geometric",
-      nameAr: "موديل الألماس الهندسي (Geometric Diamond)",
-      badge: "تصميم حصري",
-      image: "https://images.unsplash.com/photo-1585128792020-803d29415281?auto=format&fit=crop&w=600&q=80"
-    }
-  ],
-  colors: [
-    {
-      id: "gold",
-      nameAr: "ذهبي ملكي (Royal Gold)",
-      hex: "#D4AF37",
-      border: "#B38F24"
-    },
-    {
-      id: "black",
-      nameAr: "أسود مطفي كلاسيكي (Matte Black)",
-      hex: "#1A1A1A",
-      border: "#333333"
-    },
-    {
-      id: "rose-gold",
-      nameAr: "برونزي / روز غولد (Rose Gold)",
-      hex: "#B76E79",
-      border: "#9A555F"
-    },
-    {
-      id: "silver",
-      nameAr: "فضي كروم نقي (Pure Silver)",
-      hex: "#C0C0C0",
-      border: "#A6A6A6"
-    }
-  ],
-  features: [
-    {
-      titleAr: "محرك كوارتز صامت 100%",
-      descAr: "حركة عقارب انسيابية ناعمة بدون أي صوت تكتكة مزعج، لضمان هدوء تام في منزلك أو أثناء نومك.",
-      icon: "volume-x"
-    },
-    {
-      titleAr: "خامات أصلية مقاومة للصدأ",
-      descAr: "هيكل متين مطلي بتقنية كهروستاتيكية تمنع بهتان الألوان وتضمن مقاومة تامة للرطوبة ومرور السنين.",
-      icon: "shield-check"
-    },
-    {
-      titleAr: "توصيل سريع ومجاني بالعراق",
-      descAr: "شحن مجاني مباشر لباب بيتك في جميع المحافظات الـ 18، يصلك خلال 24 - 48 ساعة فقط.",
-      icon: "truck"
-    },
-    {
-      titleAr: "افحص وعاين قبل أن تدفع",
-      descAr: "الدفع نقداً عند الاستلام. نتيح لك فتح الصندوق ومعاينة الساعة والتأكد من سلامتها وجودتها أمام المندوب قبل دفع أي دينار.",
-      icon: "package-check"
-    }
-  ],
-  discounts: [
-    {
-      minQuantity: 1,
-      discountPerUnitIQD: 0,
-      badgeAr: "السعر الأصلي"
-    },
-    {
-      minQuantity: 2,
-      discountPerUnitIQD: 5000,
-      badgeAr: "وفر 10,000 د.ع عند طلب ساعتين"
-    },
-    {
-      minQuantity: 3,
-      discountPerUnitIQD: 7000,
-      badgeAr: "وفر 21,000 د.ع عند طلب 3 ساعات"
-    }
-  ],
-  faq: [
-    {
-      qAr: "هل الساعة تصدر أي صوت دقات أثناء الليل؟",
-      aAr: "كلا إطلاقاً! الساعة مزودة بماكينة كوارتز أصلية انسيابية (Silent Continuous Sweep) تعمل بهدوء تام دون أي صوت."
-    },
-    {
-      qAr: "هل يمكنني معاينة المنتج وفحصه قبل الدفع؟",
-      aAr: "نعم بالتأكيد! سياستنا هي الشفافية التامة؛ افتح الطرد وافحص جودة الساعة وتأكد من الموديل واللون أمام المندوب قبل استلامها وتسليم المبلغ."
-    },
-    {
-      qAr: "كم يستغرق التوصيل وما هي كلفته؟",
-      aAr: "التوصيل مجاني 100% لكافة محافظات العراق دون أي مصاريف إضافية. التوصيل يستغرق 24 ساعة لبغداد و 48 ساعة لبقية المحافظات."
-    },
-    {
-      qAr: "ماذا لو استلمت الساعة ووجدتها متضررة أو غير مطابقة؟",
-      aAr: "نضمن لك استبدالاً فورياً مجانياً أو رفض الاستلام من المندوب دون دفع أي غرامة أو تكلفة شحن. كما نوفر ضمان تشغيلي لمدة سنة كاملة."
-    },
-    {
-      qAr: "كيف يتم تركيب الساعة على الجدار؟",
-      aAr: "تأتي الساعة مع مسمار تعليق فولاذي غير مرئي مخصص لجميع أنواع الجدران ولا يترك أثراً، والتركيب سهل جداً لا يستغرق أكثر من دقيقة."
-    }
-  ]
 };
+
+export const PRODUCTS: StorefrontProduct[] = [
+  {
+    id: "royal-sunburst-3d",
+    isPublished: true,
+    storeName: "متجر الأناقة",
+    category: "ساعة جدارية ملكية",
+    productName: "ساعة إشعاع الشمس الملكية (Sunburst Luxury 3D)",
+    nameAr: "ساعة إشعاع الشمس الملكية (Sunburst Luxury 3D)",
+    tagline: "لمسة فخامة وأناقة عصرية تحول جدار منزلك إلى تحفة فنية راقية",
+    description: "ساعة جدارية بتصميم هندسي فريد مستوحى من إشعاع الشمس الذهبي، يجمع بين الفولاذ المقاوم للصدأ وحركة الكوارتز الصامتة تماماً (Silent Quartz Movement) الخالية من أي صوت دقات مزعج.",
+    priceIQD: 35000,
+    basePriceIQD: 35000,
+    compareAtPriceIQD: 55000,
+    features: [
+      "محرك كوارتز صامت 100% انسيابي الحركة بدون أي صوت دقات مزعجة",
+      "هيكل فولاذي فاخر مطلي كهروستاتيكياً لمقاومة الصدأ والرطوبة وتغير اللون",
+      "قطر 50 سم لإطلالة لافتة وواضحة تملأ الجدار برقي",
+      "توصيل سريع ومجاني لباب بيتك في كافة المحافظات العراقية الـ 18",
+      "معاينة وفحص وتشغيل الساعة أمام مندوب التوصيل قبل دفع أي دينار",
+      "ضمان استبدال تشغيلي حقيقي لمدة سنة كاملة"
+    ],
+    images: [
+      {
+        id: 1,
+        url: "https://images.unsplash.com/photo-1563861826100-9cb868fdbe1c?auto=format&fit=crop&w=1000&q=80",
+        isActive: true,
+        fit: "contain",
+        scale: 96
+      },
+      {
+        id: 2,
+        url: "https://images.unsplash.com/photo-1509042239860-f550ce710b93?auto=format&fit=crop&w=1000&q=80",
+        isActive: true,
+        fit: "contain",
+        scale: 96
+      },
+      {
+        id: 3,
+        url: "https://images.unsplash.com/photo-1533090161767-e6ffed986c88?auto=format&fit=crop&w=1000&q=80",
+        isActive: true,
+        fit: "contain",
+        scale: 96
+      },
+      {
+        id: 4,
+        url: "https://images.unsplash.com/photo-1585128792020-803d29415281?auto=format&fit=crop&w=1000&q=80",
+        isActive: true,
+        fit: "contain",
+        scale: 96
+      }
+    ],
+    models: [
+      {
+        id: "model-sunburst-gold",
+        name: "موديل إشعاع الشمس الذهبي",
+        colors: ["ذهبي ملكي (Royal Gold)", "أسود مطفي مع عقارب ذهبية", "روز غولد برونزي"],
+        stock: 14
+      },
+      {
+        id: "model-sunburst-black",
+        name: "موديل إشعاع الشمس الأسود الفاخر",
+        colors: ["أسود ملكي كامل", "أسود مع فضي نقي"],
+        stock: 9
+      }
+    ]
+  },
+  {
+    id: "nordic-minimalist",
+    isPublished: true,
+    storeName: "متجر الأناقة",
+    category: "ساعة جدارية نورديك",
+    productName: "ساعة النورديك الدائرية الهادئة (Nordic Minimalist)",
+    nameAr: "ساعة النورديك الدائرية الهادئة (Nordic Minimalist)",
+    tagline: "بساطة راقية تمنح صالتك أو مكتبك هدوءاً وجمالاً عصرياً",
+    description: "تصميم اسكندنافي بسيط وأنيق يتميز بإطار دائري مصقول وأرقام محفورة بدقة متناهية مع عقارب خشبية أو معدنية رشيقة.",
+    priceIQD: 32000,
+    basePriceIQD: 32000,
+    compareAtPriceIQD: 48000,
+    features: [
+      "ماكينة كوارتز فائقة الدقة والهدوء التام",
+      "إطار منحوت من سبائك الألومنيوم غير اللامع",
+      "زجاج عالي النقاء مضاد للانعكاس وسهل التنظيف",
+      "توصيل مجاني لجميع محافظات العراق مع المعاينة قبل الدفع",
+      "ضمان لمدة سنة كاملة ضد أي عطل مصنعي"
+    ],
+    images: [
+      {
+        id: 5,
+        url: "https://images.unsplash.com/photo-1509042239860-f550ce710b93?auto=format&fit=crop&w=1000&q=80",
+        isActive: true,
+        fit: "contain",
+        scale: 96
+      },
+      {
+        id: 6,
+        url: "https://images.unsplash.com/photo-1563861826100-9cb868fdbe1c?auto=format&fit=crop&w=1000&q=80",
+        isActive: true,
+        fit: "contain",
+        scale: 96
+      }
+    ],
+    models: [
+      {
+        id: "model-nordic-wood",
+        name: "موديل النورديك الأبيض مع الخشب",
+        colors: ["أبيض ناصع مع خشب طبيعي", "رمادي هادئ"],
+        stock: 11
+      },
+      {
+        id: "model-nordic-dark",
+        name: "موديل النورديك الرمادي الداكن",
+        colors: ["رمادي فحمي", "كحلي كلاسيكي"],
+        stock: 8
+      }
+    ]
+  },
+  {
+    id: "geometric-diamond",
+    isPublished: true,
+    storeName: "متجر الأناقة",
+    category: "ساعة جدارية مودرن",
+    productName: "ساعة الألماس الهندسي ثلاثية الأبعاد (Geometric 3D)",
+    nameAr: "ساعة الألماس الهندسي ثلاثية الأبعاد (Geometric 3D)",
+    tagline: "خطوط هندسية مبتكرة تضفي طابعاً مستقبلياً جذاباً على الجدار",
+    description: "تصميم هندسي متشابك بتقنية الليزر ثلاثية الأبعاد يمنح الجدار عمقاً وظلالاً فنية رائعة مع الإضاءة المحيطة.",
+    priceIQD: 38000,
+    basePriceIQD: 38000,
+    compareAtPriceIQD: 60000,
+    features: [
+      "قص ليزري دقيق وتشطيب يدوي متقن",
+      "حركة عقارب انسيابية صامتة معتمدة",
+      "مسمار تعليق فولاذي خفي سهل التثبيت لا يتلف الجدار",
+      "شحن مجاني مع إمكانية الفحص والتجربة أمام المندوب",
+      "ضمان استبدال سنة كاملة"
+    ],
+    images: [
+      {
+        id: 7,
+        url: "https://images.unsplash.com/photo-1585128792020-803d29415281?auto=format&fit=crop&w=1000&q=80",
+        isActive: true,
+        fit: "contain",
+        scale: 96
+      },
+      {
+        id: 8,
+        url: "https://images.unsplash.com/photo-1533090161767-e6ffed986c88?auto=format&fit=crop&w=1000&q=80",
+        isActive: true,
+        fit: "contain",
+        scale: 96
+      }
+    ],
+    models: [
+      {
+        id: "model-geometric-gold",
+        name: "الموديل الهندسي الذهبي الفاخر",
+        colors: ["ذهبي ميتاليك", "برونزي معتق"],
+        stock: 12
+      },
+      {
+        id: "model-geometric-black",
+        name: "الموديل الهندسي الأسود المات",
+        colors: ["أسود مطفي", "أسود مع أطراف ذهبية"],
+        stock: 7
+      }
+    ]
+  }
+];
+
+// Single product default reference (for single-product mode or backwards compatibility)
+export const PRODUCT = PRODUCTS[0];
+
+export function formatIQD(value: number | null): string {
+  if (value === null || value === undefined) return "يُضاف السعر من لوحة الإدارة";
+  return `${new Intl.NumberFormat("ar-IQ", { maximumFractionDigits: 0 }).format(value)} د.ع`;
+}
 
 /**
  * Server recomputes total price from config to prevent client-side tampering.
+ * Includes volume discounts (Save 10,000 on 2 clocks, save 21,000 on 3 clocks).
  */
-export function calculateOrderPrice(_productId: string, quantity: number): {
+export function calculateOrderPrice(productId: string, quantity: number): {
   unitPriceIQD: number;
   totalPriceIQD: number;
 } {
-  const basePrice = PRODUCT.basePriceIQD;
+  const matchedProduct = PRODUCTS.find((p) => p.id === productId) || PRODUCT;
+  const basePrice = matchedProduct.priceIQD;
   const qty = Math.max(1, Math.min(20, Math.floor(quantity)));
 
-  // Check volume discount
+  // Volume discounts:
   let discountPerUnit = 0;
-  for (const discount of PRODUCT.discounts) {
-    if (qty >= discount.minQuantity && discount.discountPerUnitIQD > discountPerUnit) {
-      discountPerUnit = discount.discountPerUnitIQD;
-    }
+  if (qty === 2) {
+    discountPerUnit = 5000; // 10,000 IQD discount on 2 units
+  } else if (qty >= 3) {
+    discountPerUnit = 7000; // 21,000+ IQD discount on 3+ units
   }
 
   const unitPriceIQD = Math.max(1000, basePrice - discountPerUnit);

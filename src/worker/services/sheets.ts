@@ -1,5 +1,5 @@
 import { D1OrderRecord, Env } from '../types';
-import { PRODUCT } from '../../config/products';
+import { PRODUCT, PRODUCTS } from '../../config/products';
 import { formatBaghdadDateTime } from './telegram';
 
 /**
@@ -11,8 +11,9 @@ export async function sendSheetsOrder(order: D1OrderRecord, env: Env): Promise<{
     return { success: false, error: 'SHEETS_WEBHOOK_URL missing' };
   }
 
-  const model = PRODUCT.models.find(m => m.id === order.model_id)?.nameAr || order.model_id;
-  const color = PRODUCT.colors.find(c => c.id === order.color_id)?.nameAr || order.color_id;
+  const targetProduct = PRODUCTS.find(p => p.id === order.product_id) || PRODUCT;
+  const model = targetProduct.models.find(m => m.id === order.model_id)?.name || order.model_id;
+  const color = order.color_id;
   const { date, time } = formatBaghdadDateTime(new Date(order.created_at * 1000));
 
   const payload = {
@@ -25,7 +26,7 @@ export async function sendSheetsOrder(order: D1OrderRecord, env: Env): Promise<{
       phone: order.phone,
       governorate: order.governorate,
       address: order.address,
-      productName: PRODUCT.nameAr,
+      productName: targetProduct.productName,
       modelName: model,
       colorName: color,
       quantity: order.quantity,

@@ -1,5 +1,5 @@
 import { D1OrderRecord, Env } from '../types';
-import { PRODUCT } from '../../config/products';
+import { PRODUCT, PRODUCTS } from '../../config/products';
 
 /**
  * Escapes HTML characters for Telegram HTML parse mode.
@@ -59,6 +59,7 @@ export function buildTelegramMessage(order: {
   phone: string;
   governorate: string;
   address: string;
+  productName?: string;
   modelName: string;
   colorName: string;
   quantity: number;
@@ -71,6 +72,7 @@ export function buildTelegramMessage(order: {
   utmCampaign?: string;
 }): string {
   const store = order.storeName || 'متجر الأناقة للساعات الجدارية';
+  const productName = order.productName || 'ساعة حائط فاخرة';
   const { full: dateTimeBaghdad } = formatBaghdadDateTime(new Date(order.createdAt * 1000));
 
   return [
@@ -85,7 +87,7 @@ export function buildTelegramMessage(order: {
     `📍 <b>المحافظة:</b> ${escapeTelegramHtml(order.governorate)}`,
     `🏠 <b>العنوان:</b> ${escapeTelegramHtml(order.address)}`,
     `━━━━━━━━━━━━━━━━━━━━`,
-    `🕰 <b>المنتج:</b> ${escapeTelegramHtml(PRODUCT.nameAr)}`,
+    `🕰 <b>المنتج:</b> ${escapeTelegramHtml(productName)}`,
     `✨ <b>الموديل:</b> ${escapeTelegramHtml(order.modelName)}`,
     `🎨 <b>اللون:</b> ${escapeTelegramHtml(order.colorName)}`,
     `🔢 <b>الكمية:</b> ${order.quantity}`,
@@ -108,8 +110,9 @@ export async function sendTelegramOrder(order: D1OrderRecord, env: Env): Promise
     return { success: false, error: 'Telegram credentials missing' };
   }
 
-  const model = PRODUCT.models.find(m => m.id === order.model_id)?.nameAr || order.model_id;
-  const color = PRODUCT.colors.find(c => c.id === order.color_id)?.nameAr || order.color_id;
+  const targetProduct = PRODUCTS.find(p => p.id === order.product_id) || PRODUCT;
+  const model = targetProduct.models.find(m => m.id === order.model_id)?.name || order.model_id;
+  const color = order.color_id;
 
   const text = buildTelegramMessage({
     id: order.id,
@@ -117,6 +120,7 @@ export async function sendTelegramOrder(order: D1OrderRecord, env: Env): Promise
     phone: order.phone,
     governorate: order.governorate,
     address: order.address,
+    productName: targetProduct.productName,
     modelName: model,
     colorName: color,
     quantity: order.quantity,
