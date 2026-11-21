@@ -50,21 +50,28 @@ export function buildFbc(fbclid?: string | null, existingFbc?: string | null): s
 
 /**
  * Converts order total into the target currency (USD default or IQD).
+ * Applies payment commission on top of the base USD value.
+ * Example: 35000 IQD / 1520 rate = 23.03 USD → +5% commission = 24.18 USD
  */
 export function computeMetaValueAndCurrency(
   totalIQD: number,
   currency: string = 'USD',
-  rateString: string = '1310'
+  rateString: string = '1520',
+  commissionPercentString: string = '0'
 ): { value: number; currency: string } {
   const curr = currency.toUpperCase();
   if (curr === 'IQD') {
     return { value: Math.max(1, totalIQD), currency: 'IQD' };
   }
 
-  const rate = parseFloat(rateString) || 1310;
-  const usdValue = Number((totalIQD / rate).toFixed(2));
-  // Value must never be 0
-  const finalValue = Math.max(0.01, usdValue);
+  const rate = parseFloat(rateString) || 1520;
+  const commissionPercent = parseFloat(commissionPercentString) || 0;
+
+  // 1. Convert IQD → USD
+  const baseUsd = totalIQD / rate;
+  // 2. Apply commission: 5% means multiply by 1.05
+  const withCommission = baseUsd * (1 + commissionPercent / 100);
+  const finalValue = Math.max(0.01, Number(withCommission.toFixed(2)));
 
   return {
     value: finalValue,
@@ -78,8 +85,9 @@ export function computeMetaValueAndCurrency(
 export async function buildMetaCapiPayload(order: D1OrderRecord, env: Env): Promise<any> {
   const eventId = `purchase-${order.id}`;
   const currencySetting = env.META_CURRENCY || 'USD';
-  const usdRateSetting = env.USD_RATE || '1310';
-  const { value, currency } = computeMetaValueAndCurrency(order.total_price, currencySetting, usdRateSetting);
+  const usdRateSetting = env.USD_RATE || '1520';
+  const commissionSetting = env.PAYMENT_COMMISSION_PERCENT || '0';
+  const { value, currency } = computeMetaValueAndCurrency(order.total_price, currencySetting, usdRateSetting, commissionSetting);
 
   // Phone normalization to E.164 digits for hashing
   const phoneRes = normalizeIraqiPhone(order.phone);

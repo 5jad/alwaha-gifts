@@ -23,6 +23,7 @@ export interface Env {
   META_API_VERSION?: string;
   META_CURRENCY?: string;
   USD_RATE?: string;
+  PAYMENT_COMMISSION_PERCENT?: string; // e.g. "5" = 5% added to USD cost
   META_TEST_EVENT_CODE?: string;
 
   // Cloudflare Turnstile Secret (Optional)

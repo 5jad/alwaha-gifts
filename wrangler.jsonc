@@ -25,7 +25,8 @@
   "vars": {
     "META_API_VERSION": "v21.0",
     "META_CURRENCY": "USD",
-    "USD_RATE": "1310",
+    "USD_RATE": "1520",
+    "PAYMENT_COMMISSION_PERCENT": "5",
     "STORE_NAME_AR": "متجر الأناقة للساعات الجدارية"
   }
 }

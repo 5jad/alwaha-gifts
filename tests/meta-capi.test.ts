@@ -23,17 +23,22 @@ describe('Meta Conversions API (CAPI) Payload Builder', () => {
     expect(fbcPreserved).toBe('fb.1.1600000000000.existing');
   });
 
-  it('computes Meta currency and value with USD conversion and never returns 0', () => {
-    const usdResult = computeMetaValueAndCurrency(35000, 'USD', '1310');
+  it('computes Meta currency and value with USD conversion + commission and never returns 0', () => {
+    // 35000 IQD / 1520 rate = 23.03 USD → +5% = 24.18 USD
+    const usdResult = computeMetaValueAndCurrency(35000, 'USD', '1520', '5');
     expect(usdResult.currency).toBe('USD');
-    expect(usdResult.value).toBe(26.72); // 35000 / 1310 rounded to 2 decimals
+    expect(usdResult.value).toBe(24.18); // 35000/1520=23.0263 * 1.05 = 24.1776 ≈ 24.18
+
+    // No commission (backward compat)
+    const usdNoComm = computeMetaValueAndCurrency(35000, 'USD', '1520', '0');
+    expect(usdNoComm.value).toBe(23.03); // 35000/1520 = 23.0263 ≈ 23.03
 
     const iqdResult = computeMetaValueAndCurrency(35000, 'IQD');
     expect(iqdResult.currency).toBe('IQD');
     expect(iqdResult.value).toBe(35000);
 
     // Extreme low value never returns 0
-    const zeroHandling = computeMetaValueAndCurrency(0, 'USD', '1310');
+    const zeroHandling = computeMetaValueAndCurrency(0, 'USD', '1520', '5');
     expect(zeroHandling.value).toBe(0.01);
   });
 
@@ -73,7 +78,8 @@ describe('Meta Conversions API (CAPI) Payload Builder', () => {
     const mockEnv = {
       DB: {} as any,
       META_CURRENCY: 'USD',
-      USD_RATE: '1310',
+      USD_RATE: '1520',
+      PAYMENT_COMMISSION_PERCENT: '5',
       META_TEST_EVENT_CODE: 'TEST654321'
     };
 
@@ -107,7 +113,8 @@ describe('Meta Conversions API (CAPI) Payload Builder', () => {
 
     // Custom data
     expect(event.custom_data.currency).toBe('USD');
-    expect(event.custom_data.value).toBe(45.80); // 60000 / 1310
+    // 60000 IQD / 1520 rate = 39.47 USD → +5% = 41.45 USD
+    expect(event.custom_data.value).toBe(41.45); // 60000/1520=39.4736*1.05=41.4473≈41.45
     expect(event.custom_data.content_ids).toEqual(['royal-wall-clock-3d']);
     expect(event.custom_data.num_items).toBe(2);
   });
