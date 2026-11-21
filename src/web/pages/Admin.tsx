@@ -10,128 +10,199 @@ import {
   ShieldCheck,
   Search,
   Truck,
-  DollarSign,
+  TrendingUp,
   Package,
+  Plus,
+  Pencil,
+  Trash2,
+  X,
+  Eye,
+  EyeOff,
+  Settings,
+  BarChart3,
+  ChevronDown,
+  ChevronUp,
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
-import { formatIQD, PRODUCTS, STORE_CONFIG } from "../../config/products";
-import { D1OrderRecord } from "../../worker/types";
+import { formatIQD, PRODUCTS, STORE_CONFIG, type StorefrontProduct, type StorefrontModel } from "../../config/products";
+import { type D1OrderRecord } from "../../worker/types";
 
 type Notice = { type: "success" | "error"; message: string };
+type Tab = "orders" | "products" | "settings";
+
+// ─── Blank product template ─────────────────────────────────────────────────
+const blankProduct = (): Partial<StorefrontProduct> => ({
+  id: "",
+  isPublished: true,
+  category: "ساعة جدارية",
+  productName: "",
+  tagline: "",
+  description: "",
+  priceIQD: 35000,
+  compareAtPriceIQD: 55000,
+  features: [""],
+  images: [{ id: 1, url: "", isActive: true, fit: "contain", scale: 96 }],
+  models: [{ id: "model-1", name: "", colors: [""], stock: 10 }],
+});
+
+// ─── Helper ──────────────────────────────────────────────────────────────────
+function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
+  return (
+    <span
+      className={`order-status ${ok ? "order-status-confirmed" : "order-status-delivery_failed"}`}
+    >
+      {ok ? <CheckCircle2 size={11} /> : <XCircle size={11} />} {label}: {ok ? "✓" : "✗"}
+    </span>
+  );
+}
 
 export default function Admin() {
-  const [loading, setLoading] = useState(true);
+  // ── Auth ────────────────────────────────────────────────────────────────
+  const [loading, setLoading]           = useState(true);
   const [authenticated, setAuthenticated] = useState(false);
-  const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [token, setToken] = useState<string>("");
+  const [username, setUsername]         = useState("admin");
+  const [password, setPassword]         = useState("");
+  const [showPw, setShowPw]             = useState(false);
+  const [token, setToken]               = useState("");
+  const [busy, setBusy]                 = useState(false);
+  const [notice, setNotice]             = useState<Notice | null>(null);
 
-  const [orders, setOrders] = useState<D1OrderRecord[]>([]);
-  const [totalOrders, setTotalOrders] = useState(0);
-  const [totalRevenueIQD, setTotalRevenueIQD] = useState(0);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [retryingId, setRetryingId] = useState<string | null>(null);
+  // ── Tab ─────────────────────────────────────────────────────────────────
+  const [tab, setTab] = useState<Tab>("orders");
 
-  const [notice, setNotice] = useState<Notice | null>(null);
-  const [telegramStatus, setTelegramStatus] = useState<string>("");
-  const [telegramBotConfigured, setTelegramBotConfigured] = useState(false);
-  const [sendingTelegramTest, setSendingTelegramTest] = useState(false);
+  // ── Orders ──────────────────────────────────────────────────────────────
+  const [orders, setOrders]               = useState<D1OrderRecord[]>([]);
+  const [totalOrders, setTotalOrders]     = useState(0);
+  const [totalRevenueIQD, setTotalRevenue] = useState(0);
+  const [searchQuery, setSearchQuery]     = useState("");
+  const [retryingId, setRetryingId]       = useState<string | null>(null);
+  const [expandedId, setExpandedId]       = useState<string | null>(null);
 
-  const [metaInfo, setMetaInfo] = useState<any>(null);
+  // ── Products ─────────────────────────────────────────────────────────────
+  const [products, setProducts]       = useState<StorefrontProduct[]>([]);
+  const [productsLoaded, setProductsLoaded] = useState(false);
+  const [showProductModal, setShowProductModal] = useState(false);
+  const [editProduct, setEditProduct] = useState<Partial<StorefrontProduct>>(blankProduct());
+  const [isEditMode, setIsEditMode]   = useState(false);
+  const [productBusy, setProductBusy] = useState(false);
+  const [deletingId, setDeletingId]   = useState<string | null>(null);
 
+  // ── Settings ─────────────────────────────────────────────────────────────
+  const [settings, setSettings]           = useState<Record<string, string>>({});
+  const [settingsForm, setSettingsForm]   = useState({ telegram_chat_id: "", sheets_webhook_url: "", sheets_secret: "" });
+  const [settingsBusy, setSettingsBusy]   = useState(false);
+  const [tgTestBusy, setTgTestBusy]       = useState(false);
+  const [tgBotReady, setTgBotReady]       = useState(false);
+  const [metaInfo, setMetaInfo]           = useState<any>(null);
+
+  // ── Boot ──────────────────────────────────────────────────────────────
   useEffect(() => {
     document.documentElement.lang = "ar";
     document.documentElement.dir = "rtl";
-
-    const savedToken = localStorage.getItem("az_admin_token");
-    if (savedToken) {
-      setToken(savedToken);
-      checkSession(savedToken);
-    } else {
-      setLoading(false);
-    }
+    const saved = localStorage.getItem("az_admin_token");
+    if (saved) { setToken(saved); checkSession(saved); }
+    else setLoading(false);
   }, []);
 
-  async function checkSession(authToken: string) {
+  function flash(type: Notice["type"], message: string) {
+    setNotice({ type, message });
+    setTimeout(() => setNotice(null), 5000);
+  }
+
+  function authHeaders(t = token) {
+    return { Authorization: `Bearer ${t}`, "Content-Type": "application/json" };
+  }
+
+  async function checkSession(t: string) {
     try {
-      const res = await fetch("/api/admin/session", {
-        headers: { Authorization: `Bearer ${authToken}` },
-      });
+      const res  = await fetch("/api/admin/session", { headers: { Authorization: `Bearer ${t}` } });
       const data = await res.json() as any;
       if (data.authenticated) {
         setAuthenticated(true);
         if (data.username) setUsername(data.username);
-        void loadDashboardData(authToken);
+        void loadAll(t);
       } else {
         localStorage.removeItem("az_admin_token");
         setAuthenticated(false);
       }
-    } catch {
-      setAuthenticated(false);
-    } finally {
-      setLoading(false);
-    }
+    } catch { setAuthenticated(false); }
+    finally { setLoading(false); }
   }
 
-  async function loadDashboardData(authToken: string) {
+  async function loadAll(t = token) {
     setBusy(true);
     try {
-      const [ordersRes, tgRes, metaRes] = await Promise.all([
-        fetch("/api/admin/orders", { headers: { Authorization: `Bearer ${authToken}` } }),
-        fetch("/api/admin/telegram-status", { headers: { Authorization: `Bearer ${authToken}` } }),
-        fetch("/api/admin/meta-status", { headers: { Authorization: `Bearer ${authToken}` } }),
+      const [ordersRes, tgRes, metaRes, settingsRes] = await Promise.all([
+        fetch("/api/admin/orders",         { headers: authHeaders(t) }),
+        fetch("/api/admin/telegram-status",{ headers: authHeaders(t) }),
+        fetch("/api/admin/meta-status",    { headers: authHeaders(t) }),
+        fetch("/api/admin/settings",       { headers: authHeaders(t) }),
       ]);
-
       if (ordersRes.ok) {
-        const data = await ordersRes.json() as any;
-        setOrders(data.orders || []);
-        setTotalOrders(data.totalOrders || 0);
-        setTotalRevenueIQD(data.totalRevenueIQD || 0);
+        const d = await ordersRes.json() as any;
+        setOrders(d.orders || []);
+        setTotalOrders(d.totalOrders || 0);
+        setTotalRevenue(d.totalRevenueIQD || 0);
       }
-
       if (tgRes.ok) {
-        const tgData = await tgRes.json() as any;
-        setTelegramBotConfigured(tgData.botConfigured);
-        setTelegramStatus(tgData.message);
+        const d = await tgRes.json() as any;
+        setTgBotReady(d.botConfigured);
       }
-
-      if (metaRes.ok) {
-        const metaData = await metaRes.json() as any;
-        setMetaInfo(metaData);
+      if (metaRes.ok) setMetaInfo(await metaRes.json());
+      if (settingsRes.ok) {
+        const d = await settingsRes.json() as any;
+        setSettings(d.settings || {});
+        setSettingsForm({
+          telegram_chat_id:  d.settings?.telegram_chat_id  || "",
+          sheets_webhook_url: d.settings?.sheets_webhook_url || "",
+          sheets_secret:     d.settings?.sheets_secret     || "",
+        });
       }
-    } catch (err: any) {
-      setNotice({ type: "error", message: err?.message || "تعذر تحميل بيانات اللوحة." });
-    } finally {
-      setBusy(false);
-    }
+    } catch (e: any) { flash("error", e?.message || "تعذر التحميل."); }
+    finally { setBusy(false); }
   }
 
-  async function login(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function loadProducts(t = token) {
+    if (productsLoaded) return;
+    try {
+      const res = await fetch("/api/admin/products", { headers: authHeaders(t) });
+      if (res.ok) {
+        const d = await res.json() as any;
+        setProducts(d.products || PRODUCTS);
+      } else {
+        setProducts(PRODUCTS);
+      }
+    } catch { setProducts(PRODUCTS); }
+    finally { setProductsLoaded(true); }
+  }
+
+  // Switch tab and lazy-load products
+  function switchTab(t: Tab) {
+    setTab(t);
+    if (t === "products" && !productsLoaded) void loadProducts();
+  }
+
+  async function login(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
     setBusy(true);
     setNotice(null);
     try {
-      const response = await fetch("/api/admin/login", {
+      const res  = await fetch("/api/admin/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),
       });
-      const data = await response.json() as any;
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || "بيانات الدخول غير صحيحة.");
-      }
-
+      const data = await res.json() as any;
+      if (!res.ok || !data.success) throw new Error(data.error || "بيانات الدخول غير صحيحة.");
       setToken(data.token);
       localStorage.setItem("az_admin_token", data.token);
       setAuthenticated(true);
       setPassword("");
-      void loadDashboardData(data.token);
-    } catch (err: any) {
-      setNotice({ type: "error", message: err?.message || "تعذر تسجيل الدخول." });
-    } finally {
-      setBusy(false);
-    }
+      void loadAll(data.token);
+    } catch (e: any) { flash("error", e?.message || "تعذر تسجيل الدخول."); }
+    finally { setBusy(false); }
   }
 
   function logout() {
@@ -139,51 +210,96 @@ export default function Admin() {
     setAuthenticated(false);
     setToken("");
     setOrders([]);
+    setProducts([]);
+    setProductsLoaded(false);
   }
 
+  // ── Orders actions ───────────────────────────────────────────────────────
   async function retryOrder(orderId: string) {
     setRetryingId(orderId);
-    setNotice(null);
     try {
-      const res = await fetch(`/api/admin/orders/${orderId}/retry`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res  = await fetch(`/api/admin/orders/${orderId}/retry`, { method: "POST", headers: authHeaders() });
       const data = await res.json() as any;
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "فشلت إعادة الإرسال.");
-      }
-
-      setNotice({ type: "success", message: `تمت إعادة إرسال الطلب ${orderId} بنجاح.` });
-      // Refresh orders
-      void loadDashboardData(token);
-    } catch (err: any) {
-      setNotice({ type: "error", message: err?.message || "حدث خطأ أثناء المحاولة." });
-    } finally {
-      setRetryingId(null);
-    }
+      if (!res.ok || !data.success) throw new Error(data.error || "فشلت إعادة الإرسال.");
+      flash("success", `تمت إعادة إرسال الطلب ${orderId} بنجاح.`);
+      void loadAll();
+    } catch (e: any) { flash("error", e?.message || "خطأ."); }
+    finally { setRetryingId(null); }
   }
 
-  async function sendTelegramTest() {
-    setSendingTelegramTest(true);
-    setNotice(null);
-    try {
-      const res = await fetch("/api/admin/telegram-test", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json() as any;
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "فشل إرسال رسالة الاختبار.");
-      }
-      setNotice({ type: "success", message: data.message });
-    } catch (err: any) {
-      setNotice({ type: "error", message: err?.message || "خطأ في الاتصال بالتلغرام." });
-    } finally {
-      setSendingTelegramTest(false);
-    }
+  // ── Products actions ────────────────────────────────────────────────────
+  function openAddProduct() {
+    setEditProduct(blankProduct());
+    setIsEditMode(false);
+    setShowProductModal(true);
   }
 
+  function openEditProduct(p: StorefrontProduct) {
+    setEditProduct({ ...p });
+    setIsEditMode(true);
+    setShowProductModal(true);
+  }
+
+  async function saveProduct(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setProductBusy(true);
+    try {
+      const url    = isEditMode ? `/api/admin/products/${editProduct.id}` : "/api/admin/products";
+      const method = isEditMode ? "PUT" : "POST";
+      const res    = await fetch(url, { method, headers: authHeaders(), body: JSON.stringify(editProduct) });
+      const data   = await res.json() as any;
+      if (!res.ok || !data.success) throw new Error(data.error || "فشل الحفظ.");
+      flash("success", data.message);
+      setShowProductModal(false);
+      setProductsLoaded(false);
+      void loadProducts();
+    } catch (e: any) { flash("error", e?.message || "خطأ في الحفظ."); }
+    finally { setProductBusy(false); }
+  }
+
+  async function deleteProduct(id: string) {
+    if (!confirm("هل أنت متأكد من حذف هذا المنتج؟")) return;
+    setDeletingId(id);
+    try {
+      const res  = await fetch(`/api/admin/products/${id}`, { method: "DELETE", headers: authHeaders() });
+      const data = await res.json() as any;
+      if (!res.ok || !data.success) throw new Error(data.error || "فشل الحذف.");
+      flash("success", "تم حذف المنتج.");
+      setProducts((prev) => prev.filter((p) => p.id !== id));
+    } catch (e: any) { flash("error", e?.message || "خطأ."); }
+    finally { setDeletingId(null); }
+  }
+
+  // ── Settings actions ─────────────────────────────────────────────────────
+  async function saveSettings(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setSettingsBusy(true);
+    try {
+      const res  = await fetch("/api/admin/settings", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify(settingsForm),
+      });
+      const data = await res.json() as any;
+      if (!res.ok || !data.success) throw new Error(data.error || "فشل الحفظ.");
+      flash("success", data.message);
+      void loadAll();
+    } catch (e: any) { flash("error", e?.message || "خطأ."); }
+    finally { setSettingsBusy(false); }
+  }
+
+  async function testTelegram() {
+    setTgTestBusy(true);
+    try {
+      const res  = await fetch("/api/admin/telegram-test", { method: "POST", headers: authHeaders() });
+      const data = await res.json() as any;
+      if (!res.ok || !data.success) throw new Error(data.error || "فشل الاختبار.");
+      flash("success", data.message);
+    } catch (e: any) { flash("error", e?.message || "خطأ في التلغرام."); }
+    finally { setTgTestBusy(false); }
+  }
+
+  // ── Derived ──────────────────────────────────────────────────────────────
   const filteredOrders = orders.filter((o) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
@@ -191,38 +307,86 @@ export default function Admin() {
       o.id.toLowerCase().includes(q) ||
       o.customer_name.toLowerCase().includes(q) ||
       o.phone.includes(q) ||
-      o.governorate.toLowerCase().includes(q) ||
-      o.address.toLowerCase().includes(q)
+      o.governorate.toLowerCase().includes(q)
     );
   });
 
-  return (
-    <main className="admin-page">
-      <header className="admin-header">
-        <a className="admin-brand" href="/" aria-label="العودة للمتجر">
-          <span className="brand-mark">
-            <Clock3 size={20} />
-          </span>
-          <span>
-            <strong>{STORE_CONFIG.storeName}</strong>
-            <small>لوحة إدارة الطلبات والمتجر</small>
-          </span>
-        </a>
-        <a className="admin-store-link" href="/">
-          معاينة المتجر ↗
-        </a>
-      </header>
+  // ── Product form helpers ──────────────────────────────────────────────────
+  function setFeature(i: number, val: string) {
+    const f = [...(editProduct.features || [])];
+    f[i] = val;
+    setEditProduct((p) => ({ ...p, features: f }));
+  }
+  function addFeature()       { setEditProduct((p) => ({ ...p, features: [...(p.features || []), ""] })); }
+  function removeFeature(i: number) {
+    const f = [...(editProduct.features || [])];
+    f.splice(i, 1);
+    setEditProduct((p) => ({ ...p, features: f }));
+  }
 
-      {loading ? (
-        <div className="admin-loading">
-          <LoaderCircle className="spin" size={24} /> جارٍ التحقق من الجلسة…
-        </div>
-      ) : !authenticated ? (
+  function setImageUrl(i: number, url: string) {
+    const imgs = [...(editProduct.images || [])];
+    imgs[i] = { ...imgs[i], url };
+    setEditProduct((p) => ({ ...p, images: imgs }));
+  }
+  function addImage() {
+    const imgs = editProduct.images || [];
+    setEditProduct((p) => ({ ...p, images: [...imgs, { id: imgs.length + 1, url: "", isActive: true, fit: "contain", scale: 96 }] }));
+  }
+  function removeImage(i: number) {
+    const imgs = [...(editProduct.images || [])];
+    imgs.splice(i, 1);
+    setEditProduct((p) => ({ ...p, images: imgs }));
+  }
+
+  function setModel(i: number, field: keyof StorefrontModel, val: any) {
+    const ms = [...(editProduct.models || [])];
+    ms[i] = { ...ms[i], [field]: val };
+    setEditProduct((p) => ({ ...p, models: ms }));
+  }
+  function setModelColors(i: number, raw: string) {
+    const colors = raw.split(",").map((c) => c.trim()).filter(Boolean);
+    setModel(i, "colors", colors);
+  }
+  function addModel() {
+    const ms = editProduct.models || [];
+    setEditProduct((p) => ({ ...p, models: [...ms, { id: `model-${ms.length + 1}`, name: "", colors: [""], stock: 10 }] }));
+  }
+  function removeModel(i: number) {
+    const ms = [...(editProduct.models || [])];
+    ms.splice(i, 1);
+    setEditProduct((p) => ({ ...p, models: ms }));
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // RENDER
+  // ══════════════════════════════════════════════════════════════════════════
+  if (loading) {
+    return (
+      <div className="admin-loading">
+        <LoaderCircle className="spin" size={24} /> جارٍ التحقق من الجلسة…
+      </div>
+    );
+  }
+
+  if (!authenticated) {
+    return (
+      <main className="admin-page">
+        <header className="admin-header">
+          <a className="admin-brand" href="/" aria-label="العودة للمتجر">
+            <span className="brand-mark"><Clock3 size={20} /></span>
+            <span>
+              <strong>{STORE_CONFIG.storeName}</strong>
+              <small>لوحة إدارة المتجر</small>
+            </span>
+          </a>
+        </header>
+
         <section className="admin-login-card">
           <p className="eyebrow">دخول الإدارة</p>
           <h1>تسجيل الدخول</h1>
           <p className="admin-muted">
-            سجّل الدخول لمتابعة طلبات الزبائن، والتحقق من الربط مع Telegram و Google Sheets و Meta CAPI.
+            سجّل الدخول لمتابعة الطلبات وإدارة المنتجات وإعدادات الربط.
           </p>
           <form onSubmit={login} className="admin-form">
             <label htmlFor="admin-username">اسم المستخدم</label>
@@ -234,326 +398,621 @@ export default function Admin() {
               onChange={(e) => setUsername(e.target.value)}
             />
             <label htmlFor="admin-password">كلمة المرور</label>
-            <input
-              id="admin-password"
-              type="password"
-              autoComplete="current-password"
-              required
-              value={password}
-              placeholder="اكتب كلمة المرور"
-              onChange={(e) => setPassword(e.target.value)}
-            />
+            <div style={{ position: "relative" }}>
+              <input
+                id="admin-password"
+                type={showPw ? "text" : "password"}
+                autoComplete="current-password"
+                required
+                value={password}
+                placeholder="اكتب كلمة المرور"
+                onChange={(e) => setPassword(e.target.value)}
+                style={{ paddingLeft: "2.5rem" }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPw((s) => !s)}
+                style={{ position: "absolute", left: "0.75rem", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#78756e" }}
+                aria-label={showPw ? "إخفاء" : "إظهار"}
+              >
+                {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
             <button className="admin-primary" type="submit" disabled={busy}>
-              {busy ? (
-                <>
-                  <LoaderCircle size={18} className="spin" /> جارٍ التحقق…
-                </>
-              ) : (
-                "دخول لوحة الإدارة"
-              )}
+              {busy ? <><LoaderCircle size={18} className="spin" /> جارٍ التحقق…</> : "دخول لوحة الإدارة"}
             </button>
           </form>
-          {notice && <div className={`admin-notice ${notice.type}`} role="status">{notice.message}</div>}
-          <p className="admin-security">
-            <ShieldCheck size={15} /> الجلسة مشفرة ومحمية بـ Cloudflare Workers.
-          </p>
+          {notice && <div className={`admin-notice ${notice.type}`} role="alert">{notice.message}</div>}
+          <p className="admin-security"><ShieldCheck size={15} /> الجلسة محمية بـ Cloudflare Workers.</p>
         </section>
-      ) : (
-        <section className="admin-shell">
-          <div className="admin-title-row">
+      </main>
+    );
+  }
+
+  // ── Dashboard ─────────────────────────────────────────────────────────────
+  return (
+    <main className="admin-page">
+      {/* ── Global Notice ── */}
+      {notice && (
+        <div className={`admin-global-notice ${notice.type}`} role="alert">
+          {notice.type === "success" ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+          {notice.message}
+          <button type="button" onClick={() => setNotice(null)} style={{ marginRight: "auto", background: "none", border: "none", cursor: "pointer", color: "inherit" }}>
+            <X size={15} />
+          </button>
+        </div>
+      )}
+
+      {/* ── Header ── */}
+      <header className="admin-header">
+        <a className="admin-brand" href="/" aria-label="العودة للمتجر">
+          <span className="brand-mark"><Clock3 size={20} /></span>
+          <span>
+            <strong>{STORE_CONFIG.storeName}</strong>
+            <small>لوحة إدارة المتجر</small>
+          </span>
+        </a>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+          <button
+            className="admin-quiet-button"
+            onClick={() => void loadAll()}
+            disabled={busy}
+            title="تحديث"
+          >
+            <RefreshCw size={14} className={busy ? "spin" : ""} />
+            <span className="hide-xs">تحديث</span>
+          </button>
+          <a className="admin-store-link" href="/">معاينة المتجر ↗</a>
+          <button className="admin-logout" onClick={logout}>
+            <LogOut size={14} /> <span className="hide-xs">خروج</span>
+          </button>
+        </div>
+      </header>
+
+      {/* ── KPI Cards ── */}
+      <div className="admin-kpi-row">
+        <div className="admin-kpi-card">
+          <div className="admin-kpi-label"><Package size={15} /> إجمالي الطلبات</div>
+          <div className="admin-kpi-value">{totalOrders} طلب</div>
+        </div>
+        <div className="admin-kpi-card highlight">
+          <div className="admin-kpi-label"><TrendingUp size={15} /> إجمالي المبيعات</div>
+          <div className="admin-kpi-value">{formatIQD(totalRevenueIQD)}</div>
+        </div>
+        <div className="admin-kpi-card">
+          <div className="admin-kpi-label"><Truck size={15} /> التوصيل</div>
+          <div className="admin-kpi-value" style={{ fontSize: "1rem" }}>مجاني لـ18 محافظة</div>
+        </div>
+      </div>
+
+      {/* ── Tabs ── */}
+      <div className="admin-tabs-wrapper">
+        <nav className="admin-tabs" role="tablist">
+          <button
+            role="tab"
+            aria-selected={tab === "orders"}
+            className={`admin-tab${tab === "orders" ? " active" : ""}`}
+            onClick={() => switchTab("orders")}
+          >
+            <BarChart3 size={15} /> الطلبات {totalOrders > 0 && <span className="admin-tab-badge">{totalOrders}</span>}
+          </button>
+          <button
+            role="tab"
+            aria-selected={tab === "products"}
+            className={`admin-tab${tab === "products" ? " active" : ""}`}
+            onClick={() => switchTab("products")}
+          >
+            <Package size={15} /> المنتجات
+          </button>
+          <button
+            role="tab"
+            aria-selected={tab === "settings"}
+            className={`admin-tab${tab === "settings" ? " active" : ""}`}
+            onClick={() => switchTab("settings")}
+          >
+            <Settings size={15} /> إعدادات الربط
+          </button>
+        </nav>
+      </div>
+
+      {/* ════════════════════════════════════
+          TAB 1: ORDERS
+      ════════════════════════════════════ */}
+      {tab === "orders" && (
+        <section className="admin-panel">
+          <div className="admin-panel-heading">
             <div>
-              <p className="eyebrow">لوحة التحكم</p>
-              <h1>إدارة الطلبات والربط السحابي</h1>
-              <p className="admin-muted">
-                مرحباً بك يا <strong>{username}</strong>. هنا يمكنك استعراض كافة الطلبات المخزنة في D1 والتحقق من وصولها.
-              </p>
+              <p className="eyebrow">سجل العمليات</p>
+              <h2>طلبات الزبائن ({filteredOrders.length})</h2>
             </div>
-            <div className="flex items-center gap-3">
-              <button
-                className="admin-logout"
-                onClick={() => void loadDashboardData(token)}
-                disabled={busy}
-                title="تحديث البيانات"
+            <div className="order-history-actions">
+              <a
+                href="/api/admin/orders/export"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="admin-quiet-button"
               >
-                <RefreshCw size={15} className={busy ? "spin" : ""} /> تحديث
-              </button>
-              <button className="admin-logout" onClick={logout} disabled={busy}>
-                <LogOut size={15} /> خروج
-              </button>
+                <Download size={14} /> تصدير CSV
+              </a>
             </div>
           </div>
 
-          {notice && (
-            <div className={`admin-notice ${notice.type} mb-6`} role="status">
-              {notice.type === "success" && <Check size={17} />}
-              {notice.message}
-            </div>
-          )}
-
-          {/* Quick Metrics Bar */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-            <div className="bg-[#fbf9f5] border border-[#e5e0d7] p-5 rounded-sm">
-              <div className="flex items-center gap-2 text-[#78756e] text-xs font-semibold mb-2">
-                <Package size={16} className="text-[#ae8b4d]" />
-                <span>إجمالي الطلبات المسجلة</span>
-              </div>
-              <strong className="text-2xl font-bold text-[#27251f]">{totalOrders} طلب</strong>
-            </div>
-
-            <div className="bg-[#fbf9f5] border border-[#e5e0d7] p-5 rounded-sm">
-              <div className="flex items-center gap-2 text-[#78756e] text-xs font-semibold mb-2">
-                <DollarSign size={16} className="text-[#ae8b4d]" />
-                <span>إجمالي المبيعات (D1)</span>
-              </div>
-              <strong className="text-2xl font-bold text-[#ae8b4d]">
-                {formatIQD(totalRevenueIQD)}
-              </strong>
-            </div>
-
-            <div className="bg-[#fbf9f5] border border-[#e5e0d7] p-5 rounded-sm">
-              <div className="flex items-center gap-2 text-[#78756e] text-xs font-semibold mb-2">
-                <Truck size={16} className="text-[#ae8b4d]" />
-                <span>التوصيل والشحن</span>
-              </div>
-              <strong className="text-lg font-bold text-[#31533b]">
-                مجاني لجميع المحافظات الـ 18
-              </strong>
-            </div>
+          {/* Search */}
+          <div style={{ position: "relative", marginBottom: "1rem" }}>
+            <input
+              type="text"
+              placeholder="ابحث برقم الطلب، اسم العميل، الهاتف، المحافظة…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="admin-search-input"
+            />
+            <Search size={16} className="admin-search-icon" />
           </div>
 
-          {/* Integration Status: Telegram & Meta */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            {/* Telegram Panel */}
-            <div className="bg-[#efebe3] border border-[#e1dbcf] p-5">
-              <div className="flex items-start gap-3 mb-3">
-                <Send size={18} className="text-[#ae8b4d] shrink-0 mt-0.5" />
-                <div>
-                  <strong className="text-sm block mb-1">ربط Telegram Bot</strong>
-                  <p className="text-xs text-[#78756e] leading-relaxed m-0">{telegramStatus}</p>
-                </div>
-              </div>
-              <button
-                className="admin-primary text-xs py-2 px-4"
-                type="button"
-                onClick={sendTelegramTest}
-                disabled={sendingTelegramTest || !telegramBotConfigured}
-              >
-                {sendingTelegramTest ? (
-                  <>
-                    <LoaderCircle size={15} className="spin" /> جارٍ الإرسال…
-                  </>
-                ) : (
-                  <>
-                    <Send size={15} /> إرسال رسالة فحص تجريبية
-                  </>
-                )}
-              </button>
+          {filteredOrders.length === 0 ? (
+            <div className="order-history-state">
+              {orders.length === 0 ? "لا توجد طلبات بعد." : "لا نتائج تطابق بحثك."}
             </div>
+          ) : (
+            <div className="order-history-list">
+              {filteredOrders.map((order) => {
+                const dateStr = new Date(order.created_at * 1000).toLocaleString("ar-IQ", {
+                  timeZone: "Asia/Baghdad",
+                  month: "2-digit", day: "2-digit",
+                  hour: "2-digit", minute: "2-digit", hour12: true,
+                });
+                const expanded = expandedId === order.id;
+                const isRetrying = retryingId === order.id;
 
-            {/* Meta CAPI Panel */}
-            <div className="bg-[#efebe3] border border-[#e1dbcf] p-5">
-              <div className="flex items-start gap-3 mb-3">
-                <ShieldCheck size={18} className="text-[#ae8b4d] shrink-0 mt-0.5" />
-                <div>
-                  <strong className="text-sm block mb-1">Meta Pixel & Conversions API (CAPI)</strong>
-                  <p className="text-xs text-[#78756e] leading-relaxed m-0">
-                    {metaInfo?.capiConfigured
-                      ? `جاهز ومضبوط | العملة: ${metaInfo.currency} (سعر الصرف: ${metaInfo.usdRate} د.ع)`
-                      : "يرجى تعيين META_PIXEL_ID و META_CAPI_ACCESS_TOKEN"}
-                  </p>
-                  {metaInfo?.testEventCode && (
-                    <small className="text-[11px] text-[#ae8b4d] block mt-1">
-                      رمز الاختبار النشط: <code>{metaInfo.testEventCode}</code>
-                    </small>
-                  )}
-                </div>
-              </div>
-              <span className="text-xs font-semibold text-[#3b5c37] bg-[#e7f0e1] px-2.5 py-1 inline-block">
-                إلغاء التكرار (Deduplication) مفعّل بـ event_id
-              </span>
-            </div>
-          </div>
-
-          {/* Orders History Panel */}
-          <section className="order-history-panel mb-8">
-            <div className="order-history-heading">
-              <div>
-                <p className="eyebrow">سجل العمليات</p>
-                <h2>طلبات الزبائن ({filteredOrders.length})</h2>
-              </div>
-              <div className="order-history-actions">
-                <a
-                  href={`/api/admin/orders/export`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="admin-quiet-button"
-                  title="تحميل جدول إكسل بصيغة CSV المتوافقة مع العربية"
-                >
-                  <Download size={15} /> تصدير CSV للإكسل
-                </a>
-              </div>
-            </div>
-
-            {/* Search Input */}
-            <div className="relative mb-4">
-              <input
-                type="text"
-                placeholder="ابحث برقم الطلب، اسم العميل، الهاتف، أو المحافظة…"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full border border-[#e2ded5] bg-[#fffefa] text-sm p-3 pr-10 focus:outline-none focus:border-[#ae8b4d]"
-              />
-              <Search size={18} className="text-[#78756e] absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            </div>
-
-            {filteredOrders.length === 0 ? (
-              <div className="order-history-state">
-                {orders.length === 0
-                  ? "لا توجد طلبات مسجلة بعد في قاعدة بيانات D1."
-                  : "لا توجد نتائج تطابق بحثك."}
-              </div>
-            ) : (
-              <div className="order-history-list">
-                {filteredOrders.map((order) => {
-                  const dateStr = new Date(order.created_at * 1000).toLocaleString("ar-IQ", {
-                    timeZone: "Asia/Baghdad",
-                    month: "2-digit",
-                    day: "2-digit",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    hour12: true,
-                  });
-
-                  const isRetrying = retryingId === order.id;
-
-                  return (
-                    <details className="order-history-card" key={order.id}>
-                      <summary>
-                        <div className="order-card-main">
-                          <strong>{order.id} — {order.customer_name}</strong>
-                          <span>{order.governorate} • {order.phone}</span>
-                        </div>
+                return (
+                  <div className="order-history-card" key={order.id}>
+                    {/* Summary row */}
+                    <div
+                      className="order-card-summary"
+                      onClick={() => setExpandedId(expanded ? null : order.id)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => e.key === "Enter" && setExpandedId(expanded ? null : order.id)}
+                    >
+                      <div className="order-card-main">
+                        <strong>{order.id}</strong>
+                        <span>{order.customer_name} — {order.governorate}</span>
+                        <span style={{ fontSize: "0.75rem", color: "#78756e" }}>{order.phone}</span>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
                         <div className="order-card-total">{formatIQD(order.total_price)}</div>
                         <div className="order-card-date">{dateStr}</div>
-                        <div className="flex gap-1.5 flex-wrap">
-                          <span
-                            className={`order-status ${
-                              order.telegram_sent ? "order-status-confirmed" : "order-status-delivery_failed"
-                            }`}
-                          >
-                            تلغرام: {order.telegram_sent ? "✓" : "✗"}
-                          </span>
-                          <span
-                            className={`order-status ${
-                              order.sheet_sent ? "order-status-confirmed" : "order-status-delivery_failed"
-                            }`}
-                          >
-                            شيتس: {order.sheet_sent ? "✓" : "✗"}
-                          </span>
-                          <span
-                            className={`order-status ${
-                              order.meta_sent ? "order-status-confirmed" : "order-status-delivery_failed"
-                            }`}
-                          >
-                            ميتا: {order.meta_sent ? "✓" : "✗"}
-                          </span>
+                        <div style={{ display: "flex", gap: "0.3rem", flexWrap: "wrap" }}>
+                          <StatusBadge ok={!!order.telegram_sent} label="تلغرام" />
+                          <StatusBadge ok={!!order.sheet_sent}    label="شيتس" />
+                          <StatusBadge ok={!!order.meta_sent}     label="ميتا" />
                         </div>
-                      </summary>
+                        {expanded ? <ChevronUp size={15} style={{ color: "#78756e" }} /> : <ChevronDown size={15} style={{ color: "#78756e" }} />}
+                      </div>
+                    </div>
 
+                    {/* Expanded details */}
+                    {expanded && (
                       <div className="order-history-details">
+                        <div><span>العنوان</span><strong>{order.address}</strong></div>
                         <div>
-                          <span>العنوان بالتفصيل</span>
-                          <strong>{order.address}</strong>
+                          <span>المنتج / الموديل / اللون</span>
+                          <strong>{order.product_id} | {order.model_id} | {order.color_id}</strong>
                         </div>
                         <div>
-                          <span>المنتج والموديل واللون</span>
-                          <strong>
-                            {order.product_id} | موديل: {order.model_id} ({order.color_id})
-                          </strong>
+                          <span>الكمية × السعر</span>
+                          <strong>{order.quantity} × {formatIQD(order.unit_price)}</strong>
+                        </div>
+                        {order.utm_source && (
+                          <div>
+                            <span>المصدر / الحملة</span>
+                            <span className="text-xs">{order.utm_source}{order.utm_campaign && ` | ${order.utm_campaign}`}</span>
+                          </div>
+                        )}
+                        <div>
+                          <span>Idempotency Key</span>
+                          <code style={{ fontSize: "0.68rem", fontFamily: "monospace", color: "#78756e", wordBreak: "break-all" }} dir="ltr">{order.idempotency_key}</code>
                         </div>
                         <div>
-                          <span>الكمية وسعر المفرد</span>
-                          <strong>
-                            {order.quantity} قطعة × {formatIQD(order.unit_price)}
-                          </strong>
-                        </div>
-                        <div>
-                          <span>معرف عدم التكرار (Idempotency Key)</span>
-                          <code className="text-[11px] text-[#78756e] font-mono break-all" dir="ltr">
-                            {order.idempotency_key}
-                          </code>
-                        </div>
-                        <div>
-                          <span>مصدر الزيارة (UTM / Tracking)</span>
-                          <span className="text-xs text-[#544e42]">
-                            {order.utm_source ? `Source: ${order.utm_source}` : "مباشر"}
-                            {order.utm_campaign ? ` | Campaign: ${order.utm_campaign}` : ""}
-                            {order.fbclid ? ` | fbclid: متوفر` : ""}
-                          </span>
-                        </div>
-                        <div>
-                          <span>إعادة الإرسال يدويًا</span>
+                          <span>إعادة الإرسال اليدوي</span>
                           <button
                             type="button"
                             onClick={() => retryOrder(order.id)}
                             disabled={isRetrying}
-                            className="admin-quiet-button text-xs py-1 px-3 mt-1"
+                            className="admin-quiet-button"
+                            style={{ fontSize: "0.78rem", padding: "0.3rem 0.75rem" }}
                           >
-                            {isRetrying ? (
-                              <>
-                                <LoaderCircle size={14} className="spin" /> جاري الإرسال…
-                              </>
-                            ) : (
-                              <>
-                                <RefreshCw size={14} /> إعادة إرسال القنوات الآن
-                              </>
-                            )}
+                            {isRetrying
+                              ? <><LoaderCircle size={13} className="spin" /> جارٍ…</>
+                              : <><RefreshCw size={13} /> إعادة إرسال القنوات</>
+                            }
                           </button>
                         </div>
                       </div>
-                    </details>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-
-          {/* Product Catalog Reference */}
-          <section className="admin-panel mb-8">
-            <div className="admin-panel-heading">
-              <div>
-                <span className="admin-step">01</span>
-                <h2>كتالوج الساعات المتوفرة في المتجر ({PRODUCTS.length})</h2>
-              </div>
-              <span>يمكنك تعديل الأسعار والموديلات من src/config/products.ts</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {PRODUCTS.map((p) => (
-                <div key={p.id} className="border border-[#e5e0d7] bg-[#fbf9f5] p-4 flex flex-col gap-3">
-                  <div className="aspect-[4/3] bg-[#eeebe4] overflow-hidden flex items-center justify-center">
-                    {p.images[0] ? (
-                      <img src={p.images[0].url} alt="" className="w-full h-full object-contain" />
-                    ) : (
-                      <Clock3 size={32} className="text-[#a38c61]" />
                     )}
                   </div>
-                  <div>
-                    <h3 className="font-bold text-sm text-[#27251f] mb-1">{p.productName}</h3>
-                    <p className="text-xs text-[#78756e] line-clamp-2 mb-2">{p.description}</p>
-                    <div className="flex items-center justify-between text-xs pt-2 border-t border-[#e5e0d7]">
-                      <span className="text-[#78756e]">السعر:</span>
-                      <strong className="text-sm font-bold text-[#ae8b4d]">{formatIQD(p.priceIQD)}</strong>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* ════════════════════════════════════
+          TAB 2: PRODUCTS
+      ════════════════════════════════════ */}
+      {tab === "products" && (
+        <section className="admin-panel">
+          <div className="admin-panel-heading">
+            <div>
+              <p className="eyebrow">كتالوج المنتجات</p>
+              <h2>الساعات المتوفرة ({products.length})</h2>
+            </div>
+            <button className="admin-primary" type="button" onClick={openAddProduct}>
+              <Plus size={15} /> إضافة ساعة جديدة
+            </button>
+          </div>
+
+          {!productsLoaded ? (
+            <div className="order-history-state"><LoaderCircle size={20} className="spin" /> جارٍ التحميل…</div>
+          ) : products.length === 0 ? (
+            <div className="order-history-state">لا توجد منتجات.</div>
+          ) : (
+            <div className="admin-products-grid">
+              {products.map((p) => (
+                <div key={p.id} className={`admin-product-card${p.isPublished ? "" : " unpublished"}`}>
+                  <div className="admin-product-img">
+                    {p.images?.[0]?.url
+                      ? <img src={p.images[0].url} alt="" loading="lazy" />
+                      : <Clock3 size={28} style={{ color: "#a38c61" }} />
+                    }
+                  </div>
+                  <div className="admin-product-body">
+                    <div className="admin-product-top">
+                      <h3>{p.productName}</h3>
+                      <span className={`admin-product-badge${p.isPublished ? " published" : " draft"}`}>
+                        {p.isPublished ? "منشور" : "مسودة"}
+                      </span>
+                    </div>
+                    <p className="admin-product-cat">{p.category}</p>
+                    <p className="admin-product-desc">{p.description?.slice(0, 90)}{(p.description?.length || 0) > 90 ? "…" : ""}</p>
+                    <div className="admin-product-footer">
+                      <strong className="admin-product-price">{formatIQD(p.priceIQD)}</strong>
+                      {p.compareAtPriceIQD > p.priceIQD && (
+                        <s style={{ fontSize: "0.78rem", color: "#78756e" }}>{formatIQD(p.compareAtPriceIQD)}</s>
+                      )}
+                      <div style={{ display: "flex", gap: "0.4rem", marginRight: "auto" }}>
+                        <button type="button" className="admin-icon-btn" onClick={() => openEditProduct(p)} title="تعديل">
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          className="admin-icon-btn danger"
+                          onClick={() => deleteProduct(p.id)}
+                          disabled={deletingId === p.id}
+                          title="حذف"
+                        >
+                          {deletingId === p.id ? <LoaderCircle size={13} className="spin" /> : <Trash2 size={14} />}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
               ))}
             </div>
-          </section>
-
-          <p className="admin-footer-note">
-            مسجّل الدخول باسم {username}. النظام يعمل بكفاءة عبر Cloudflare Workers و D1 الموزعة.
-          </p>
+          )}
         </section>
+      )}
+
+      {/* ════════════════════════════════════
+          TAB 3: SETTINGS
+      ════════════════════════════════════ */}
+      {tab === "settings" && (
+        <section className="admin-panel">
+          <div className="admin-panel-heading">
+            <div>
+              <p className="eyebrow">إعدادات الربط</p>
+              <h2>Telegram · Google Sheets · Meta</h2>
+            </div>
+          </div>
+
+          <div className="admin-settings-grid">
+            {/* Telegram */}
+            <div className="admin-settings-card">
+              <div className="admin-settings-card-header">
+                <Send size={17} className="text-gold" />
+                <h3>Telegram Bot</h3>
+                <span className={`admin-product-badge ${tgBotReady ? "published" : "draft"}`}>
+                  {tgBotReady ? "متصل" : "غير مضبوط"}
+                </span>
+              </div>
+              <p className="admin-muted" style={{ fontSize: "0.82rem" }}>
+                معرف المحادثة (Chat ID) اختياري — إذا تُرك فارغاً، يُستخدم <code>TELEGRAM_CHAT_ID</code> من env.
+              </p>
+              <form onSubmit={saveSettings} className="admin-form" style={{ marginTop: "1rem" }}>
+                <label>معرف محادثة التلغرام (Chat ID)</label>
+                <input
+                  type="text"
+                  placeholder="-100xxxxxxxx"
+                  value={settingsForm.telegram_chat_id}
+                  onChange={(e) => setSettingsForm((s) => ({ ...s, telegram_chat_id: e.target.value }))}
+                  dir="ltr"
+                />
+                <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem" }}>
+                  <button className="admin-primary" type="submit" disabled={settingsBusy} style={{ flex: 1 }}>
+                    {settingsBusy ? <><LoaderCircle size={15} className="spin" /> حفظ…</> : <><Check size={15} /> حفظ</>}
+                  </button>
+                  <button
+                    type="button"
+                    className="admin-quiet-button"
+                    onClick={testTelegram}
+                    disabled={tgTestBusy || !tgBotReady}
+                    title={tgBotReady ? "إرسال رسالة اختبار" : "البوت غير مضبوط بعد"}
+                    style={{ flexShrink: 0 }}
+                  >
+                    {tgTestBusy ? <><LoaderCircle size={14} className="spin" /> جارٍ…</> : <><Send size={14} /> اختبار</>}
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* Google Sheets */}
+            <div className="admin-settings-card">
+              <div className="admin-settings-card-header">
+                <Check size={17} className="text-gold" />
+                <h3>Google Sheets Webhook</h3>
+                <span className={`admin-product-badge ${settings.sheets_webhook_url ? "published" : "draft"}`}>
+                  {settings.sheets_webhook_url ? "مضبوط" : "غير مضبوط"}
+                </span>
+              </div>
+              <p className="admin-muted" style={{ fontSize: "0.82rem" }}>
+                رابط ويب آب Google Apps Script الذي يستقبل الطلبات ويكتبها في الشيت.
+              </p>
+              <form onSubmit={saveSettings} className="admin-form" style={{ marginTop: "1rem" }}>
+                <label>رابط Webhook (Sheets URL)</label>
+                <input
+                  type="url"
+                  placeholder="https://script.google.com/macros/s/…/exec"
+                  value={settingsForm.sheets_webhook_url}
+                  onChange={(e) => setSettingsForm((s) => ({ ...s, sheets_webhook_url: e.target.value }))}
+                  dir="ltr"
+                />
+                <label style={{ marginTop: "0.75rem" }}>كلمة السر المشتركة (Sheets Secret)</label>
+                <input
+                  type="text"
+                  placeholder="my-secret-token"
+                  value={settingsForm.sheets_secret}
+                  onChange={(e) => setSettingsForm((s) => ({ ...s, sheets_secret: e.target.value }))}
+                  dir="ltr"
+                />
+                <button className="admin-primary" type="submit" disabled={settingsBusy} style={{ marginTop: "0.75rem" }}>
+                  {settingsBusy ? <><LoaderCircle size={15} className="spin" /> حفظ…</> : <><Check size={15} /> حفظ الإعدادات</>}
+                </button>
+              </form>
+            </div>
+
+            {/* Meta Status */}
+            <div className="admin-settings-card">
+              <div className="admin-settings-card-header">
+                <ShieldCheck size={17} className="text-gold" />
+                <h3>Meta Pixel & CAPI</h3>
+                <span className={`admin-product-badge ${metaInfo?.capiConfigured ? "published" : "draft"}`}>
+                  {metaInfo?.capiConfigured ? "جاهز" : "يحتاج إعداد"}
+                </span>
+              </div>
+              <p className="admin-muted" style={{ fontSize: "0.82rem", marginBottom: "0.75rem" }}>
+                تُضبط هذه القيم عبر متغيرات البيئة (<code>wrangler secret put</code>) ولا يمكن تغييرها من هنا.
+              </p>
+              <div className="admin-meta-info">
+                <div><span>Pixel ID</span><code>{metaInfo?.pixelId || "—"}</code></div>
+                <div><span>API Version</span><code dir="ltr">{metaInfo?.apiVersion || "v21.0"}</code></div>
+                <div><span>Currency</span><code dir="ltr">{metaInfo?.currency || "USD"} (Rate: {metaInfo?.usdRate || "1310"})</code></div>
+                {metaInfo?.testEventCode && (
+                  <div><span>Test Event Code</span><code dir="ltr">{metaInfo.testEventCode}</code></div>
+                )}
+              </div>
+              <div className="admin-meta-note">
+                <ShieldCheck size={13} /> إلغاء التكرار (Deduplication) مفعّل بـ <code>event_id = "purchase-{"{orderId}"}"</code>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      <p className="admin-footer-note">
+        مسجّل الدخول باسم <strong>{username}</strong> • {STORE_CONFIG.storeName} • يعمل بكفاءة عبر Cloudflare Workers & D1
+      </p>
+
+      {/* ════════════════════════════════════
+          PRODUCT MODAL
+      ════════════════════════════════════ */}
+      {showProductModal && (
+        <div className="admin-modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowProductModal(false)}>
+          <div className="admin-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+            <div className="admin-modal-header">
+              <h2 id="modal-title">{isEditMode ? "تعديل المنتج" : "إضافة ساعة جديدة"}</h2>
+              <button type="button" onClick={() => setShowProductModal(false)} className="admin-modal-close" aria-label="إغلاق">
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={saveProduct} className="admin-modal-form">
+              {/* Basic Info */}
+              <fieldset>
+                <legend>المعلومات الأساسية</legend>
+                <div className="admin-form-row">
+                  <div>
+                    <label>معرف المنتج (ID) *</label>
+                    <input
+                      required
+                      dir="ltr"
+                      placeholder="royal-sunburst-3d"
+                      value={editProduct.id || ""}
+                      onChange={(e) => setEditProduct((p) => ({ ...p, id: e.target.value }))}
+                      disabled={isEditMode}
+                    />
+                  </div>
+                  <div>
+                    <label>الفئة</label>
+                    <input
+                      placeholder="ساعة جدارية ملكية"
+                      value={editProduct.category || ""}
+                      onChange={(e) => setEditProduct((p) => ({ ...p, category: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                <label>اسم المنتج (عربي) *</label>
+                <input
+                  required
+                  placeholder="ساعة إشعاع الشمس الملكية"
+                  value={editProduct.productName || ""}
+                  onChange={(e) => setEditProduct((p) => ({ ...p, productName: e.target.value }))}
+                />
+                <label>الشعار المختصر (Tagline)</label>
+                <input
+                  placeholder="لمسة فخامة وأناقة عصرية…"
+                  value={editProduct.tagline || ""}
+                  onChange={(e) => setEditProduct((p) => ({ ...p, tagline: e.target.value }))}
+                />
+                <label>الوصف التفصيلي</label>
+                <textarea
+                  rows={3}
+                  value={editProduct.description || ""}
+                  onChange={(e) => setEditProduct((p) => ({ ...p, description: e.target.value }))}
+                />
+              </fieldset>
+
+              {/* Pricing */}
+              <fieldset>
+                <legend>التسعير</legend>
+                <div className="admin-form-row">
+                  <div>
+                    <label>السعر (د.ع) *</label>
+                    <input
+                      type="number"
+                      required
+                      min={0}
+                      dir="ltr"
+                      value={editProduct.priceIQD || ""}
+                      onChange={(e) => setEditProduct((p) => ({ ...p, priceIQD: Number(e.target.value), basePriceIQD: Number(e.target.value) }))}
+                    />
+                  </div>
+                  <div>
+                    <label>السعر قبل التخفيض (د.ع)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      dir="ltr"
+                      value={editProduct.compareAtPriceIQD || ""}
+                      onChange={(e) => setEditProduct((p) => ({ ...p, compareAtPriceIQD: Number(e.target.value) }))}
+                    />
+                  </div>
+                </div>
+                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={editProduct.isPublished !== false}
+                    onChange={(e) => setEditProduct((p) => ({ ...p, isPublished: e.target.checked }))}
+                  />
+                  منشور (يظهر في المتجر)
+                </label>
+              </fieldset>
+
+              {/* Images */}
+              <fieldset>
+                <legend>صور المنتج</legend>
+                {(editProduct.images || []).map((img, i) => (
+                  <div key={i} className="admin-form-row" style={{ alignItems: "center" }}>
+                    <input
+                      type="url"
+                      dir="ltr"
+                      placeholder="https://…"
+                      value={img.url}
+                      onChange={(e) => setImageUrl(i, e.target.value)}
+                      style={{ flex: 1 }}
+                    />
+                    {img.url && <img src={img.url} alt="" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 2 }} />}
+                    <button type="button" className="admin-icon-btn danger" onClick={() => removeImage(i)}><X size={13} /></button>
+                  </div>
+                ))}
+                <button type="button" className="admin-quiet-button" onClick={addImage} style={{ marginTop: "0.4rem" }}>
+                  <Plus size={13} /> إضافة صورة
+                </button>
+              </fieldset>
+
+              {/* Features */}
+              <fieldset>
+                <legend>المميزات (قائمة)</legend>
+                {(editProduct.features || []).map((f, i) => (
+                  <div key={i} className="admin-form-row" style={{ alignItems: "center" }}>
+                    <input
+                      value={f}
+                      onChange={(e) => setFeature(i, e.target.value)}
+                      placeholder={`ميزة ${i + 1}`}
+                      style={{ flex: 1 }}
+                    />
+                    <button type="button" className="admin-icon-btn danger" onClick={() => removeFeature(i)}><X size={13} /></button>
+                  </div>
+                ))}
+                <button type="button" className="admin-quiet-button" onClick={addFeature} style={{ marginTop: "0.4rem" }}>
+                  <Plus size={13} /> إضافة ميزة
+                </button>
+              </fieldset>
+
+              {/* Models */}
+              <fieldset>
+                <legend>الموديلات وألوانها</legend>
+                {(editProduct.models || []).map((m, i) => (
+                  <div key={i} className="admin-model-block">
+                    <div className="admin-form-row">
+                      <div style={{ flex: 1 }}>
+                        <label>اسم الموديل</label>
+                        <input
+                          value={m.name}
+                          onChange={(e) => setModel(i, "name", e.target.value)}
+                          placeholder="موديل الذهبي الملكي"
+                        />
+                      </div>
+                      <div>
+                        <label>المخزون</label>
+                        <input
+                          type="number"
+                          min={0}
+                          dir="ltr"
+                          value={m.stock}
+                          onChange={(e) => setModel(i, "stock", Number(e.target.value))}
+                          style={{ width: "5rem" }}
+                        />
+                      </div>
+                      <button type="button" className="admin-icon-btn danger" onClick={() => removeModel(i)} style={{ marginTop: "1.4rem" }}><X size={13} /></button>
+                    </div>
+                    <label>الألوان (مفصولة بفاصلة)</label>
+                    <input
+                      value={(m.colors || []).join(", ")}
+                      onChange={(e) => setModelColors(i, e.target.value)}
+                      placeholder="ذهبي ملكي, أسود مطفي, روز غولد"
+                    />
+                  </div>
+                ))}
+                <button type="button" className="admin-quiet-button" onClick={addModel} style={{ marginTop: "0.4rem" }}>
+                  <Plus size={13} /> إضافة موديل
+                </button>
+              </fieldset>
+
+              <div className="admin-modal-actions">
+                <button type="button" className="admin-quiet-button" onClick={() => setShowProductModal(false)}>
+                  إلغاء
+                </button>
+                <button type="submit" className="admin-primary" disabled={productBusy}>
+                  {productBusy
+                    ? <><LoaderCircle size={15} className="spin" /> جارٍ الحفظ…</>
+                    : <><Check size={15} /> {isEditMode ? "حفظ التعديلات" : "إضافة المنتج"}</>
+                  }
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </main>
   );

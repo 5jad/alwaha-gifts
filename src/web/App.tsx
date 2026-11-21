@@ -95,6 +95,7 @@ function StoreHeader({
 }
 
 export default function App() {
+  const [catalog, setCatalog] = useState<StorefrontProduct[]>(PRODUCTS);
   const [selectedProductId, setSelectedProductId] = useState<string>(PRODUCTS[0].id);
   const [form, setForm] = useState<OrderForm>(initialForm);
   const [sending, setSending] = useState(false);
@@ -128,7 +129,23 @@ export default function App() {
     }, 2500);
   };
 
-  const product = PRODUCTS.find((item) => item.id === selectedProductId) ?? PRODUCTS[0];
+  // Fetch dynamic products from D1 / API
+  useEffect(() => {
+    fetch('/api/products')
+      .then((r) => r.json())
+      .then((data: any) => {
+        if (data.success && Array.isArray(data.products) && data.products.length > 0) {
+          setCatalog(data.products);
+          // If current selection is not in new catalog, set to first
+          if (!data.products.some((p: StorefrontProduct) => p.id === selectedProductId)) {
+            setSelectedProductId(data.products[0].id);
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const product = catalog.find((item) => item.id === selectedProductId) ?? catalog[0];
   const selectedModel = product.models.find((model) => model.id === form.modelId) ?? product.models[0];
   const storeName = STORE_CONFIG.storeName;
 
@@ -289,7 +306,7 @@ export default function App() {
   }
 
   const pricing = calculateOrderPrice(product.id, form.quantity);
-  const currentProductIdx = PRODUCTS.findIndex((p) => p.id === product.id) + 1;
+  const currentProductIdx = catalog.findIndex((p) => p.id === product.id) + 1;
 
   return (
     <main className="store-page">
@@ -302,7 +319,7 @@ export default function App() {
       {/* 1. Clock Selection Cards (Exact previous design) */}
       <ProductCards
         id="product-selection"
-        products={PRODUCTS}
+        products={catalog}
         selectedProductId={product.id}
         onSelect={selectProduct}
         disabled={sending}
@@ -353,7 +370,7 @@ export default function App() {
           <div className="hero-index">
             <span>{String(currentProductIdx).padStart(2, "0")}</span>
             <i />
-            <span>{String(PRODUCTS.length).padStart(2, "0")}</span>
+            <span>{String(catalog.length).padStart(2, "0")}</span>
           </div>
         </section>
 

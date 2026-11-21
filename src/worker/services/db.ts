@@ -1,4 +1,5 @@
 import { D1OrderRecord } from '../types';
+import { StorefrontProduct } from '../../config/products';
 
 export class OrderRepository {
   constructor(private db: D1Database) {}
@@ -196,5 +197,99 @@ export class OrderRepository {
       SET retry_count = retry_count + 1, last_retry_at = ?
       WHERE id = ?
     `).bind(now, id).run();
+  }
+}
+
+export class SettingsRepository {
+  constructor(private db: D1Database) {}
+
+  async getSetting(key: string): Promise<string | null> {
+    try {
+      const res = await this.db.prepare('SELECT value FROM store_settings WHERE key = ?').bind(key).first<{ value: string }>();
+      return res?.value || null;
+    } catch {
+      return null;
+    }
+  }
+
+  async getAllSettings(): Promise<Record<string, string>> {
+    try {
+      const { results } = await this.db.prepare('SELECT key, value FROM store_settings').all<{ key: string; value: string }>();
+      const settings: Record<string, string> = {};
+      results?.forEach((r) => {
+        settings[r.key] = r.value;
+      });
+      return settings;
+    } catch {
+      return {};
+    }
+  }
+
+  async setSetting(key: string, value: string): Promise<void> {
+    const now = Math.floor(Date.now() / 1000);
+    await this.db.prepare(`
+      INSERT INTO store_settings (key, value, updated_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = ?
+    `).bind(key, value, now, value, now).run();
+  }
+}
+
+export class ProductRepository {
+  constructor(private db: D1Database) {}
+
+  async getAllProducts(onlyPublished = false): Promise<StorefrontProduct[]> {
+    try {
+      const query = onlyPublished
+        ? 'SELECT * FROM products WHERE is_published = 1 ORDER BY created_at ASC'
+        : 'SELECT * FROM products ORDER BY created_at ASC';
+      const { results } = await this.db.prepare(query).all<any>();
+      if (!results || results.length === 0) return [];
+
+      return results.map((row) => ({
+        id: row.id,
+        isPublished: Boolean(row.is_published),
+        storeName: 'متجر الأناقة',
+        category: row.category,
+        productName: row.product_name,
+        nameAr: row.product_name,
+        tagline: row.tagline,
+        description: row.description,
+        priceIQD: row.price_iqd,
+        basePriceIQD: row.price_iqd,
+        compareAtPriceIQD: row.compare_at_price_iqd,
+        features: JSON.parse(row.features_json || '[]'),
+        images: JSON.parse(row.images_json || '[]'),
+        models: JSON.parse(row.models_json || '[]'),
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  async saveProduct(p: StorefrontProduct): Promise<void> {
+    const now = Math.floor(Date.now() / 1000);
+    await this.db.prepare(`
+      INSERT INTO products (
+        id, is_published, category, product_name, tagline, description,
+        price_iqd, compare_at_price_iqd, features_json, images_json, models_json,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        is_published = ?, category = ?, product_name = ?, tagline = ?, description = ?,
+        price_iqd = ?, compare_at_price_iqd = ?, features_json = ?, images_json = ?, models_json = ?,
+        updated_at = ?
+    `).bind(
+      p.id, p.isPublished ? 1 : 0, p.category, p.productName, p.tagline, p.description,
+      p.priceIQD, p.compareAtPriceIQD, JSON.stringify(p.features), JSON.stringify(p.images), JSON.stringify(p.models),
+      now, now,
+      p.isPublished ? 1 : 0, p.category, p.productName, p.tagline, p.description,
+      p.priceIQD, p.compareAtPriceIQD, JSON.stringify(p.features), JSON.stringify(p.images), JSON.stringify(p.models),
+      now
+    ).run();
+  }
+
+  async deleteProduct(id: string): Promise<void> {
+    await this.db.prepare('DELETE FROM products WHERE id = ?').bind(id).run();
   }
 }

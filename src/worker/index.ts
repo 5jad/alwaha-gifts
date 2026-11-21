@@ -3,12 +3,12 @@ import { secureHeaders } from 'hono/secure-headers';
 import { bodyLimit } from 'hono/body-limit';
 import { Env, D1OrderRecord } from './types';
 import { orderSchema, normalizeIraqiPhone, verifyTurnstileToken } from './validation';
-import { OrderRepository } from './services/db';
+import { OrderRepository, SettingsRepository, ProductRepository } from './services/db';
 import { checkRateLimit } from './services/rate-limiter';
 import { sendTelegramOrder } from './services/telegram';
 import { sendSheetsOrder } from './services/sheets';
 import { sendMetaCapiOrder, extractMetaCookies } from './services/meta-capi';
-import { calculateOrderPrice, PRODUCT, PRODUCTS } from '../config/products';
+import { PRODUCT, PRODUCTS, StorefrontProduct, STORE_CONFIG } from '../config/products';
 import { OrderResponse, OrderSuccessResponse } from '../shared/types';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -33,8 +33,8 @@ app.use('/api/*', async (c, next) => {
     
     if (isSameHost || isLocalhost) {
       c.res.headers.set('Access-Control-Allow-Origin', origin);
-      c.res.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-      c.res.headers.set('Access-Control-Allow-Headers', 'Content-Type, Idempotency-Key');
+      c.res.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+      c.res.headers.set('Access-Control-Allow-Headers', 'Content-Type, Idempotency-Key, Authorization, X-Admin-Token');
     } else {
       return c.json({ success: false, error: 'غير مصرح بالوصول عبر هذا النطاق (CORS)' }, 403);
     }
@@ -178,7 +178,18 @@ app.post('/api/order', async (c) => {
   }
 
   // 8. Server-Side Price Recomputation (NEVER trust client prices)
-  const pricing = calculateOrderPrice(data.productId, data.quantity);
+  const productRepo = new ProductRepository(c.env.DB);
+  const dbProducts = await productRepo.getAllProducts(false);
+  const matchedProduct = dbProducts.find((p) => p.id === data.productId) || PRODUCTS.find((p) => p.id === data.productId) || PRODUCT;
+  const basePrice = matchedProduct.priceIQD;
+  const qty = Math.max(1, Math.min(20, Math.floor(data.quantity)));
+  let discountPerUnit = 0;
+  if (qty === 2) discountPerUnit = 5000;
+  else if (qty >= 3) discountPerUnit = 7000;
+  const unitPriceIQD = Math.max(1000, basePrice - discountPerUnit);
+  const totalPriceIQD = unitPriceIQD * qty;
+  const pricing = { unitPriceIQD, totalPriceIQD };
+
   const now = Math.floor(Date.now() / 1000);
   // Generate short, unique Order ID e.g. IQ-829104
   const randomSuffix = Math.floor(100000 + Math.random() * 900000);
@@ -250,33 +261,41 @@ app.post('/api/order', async (c) => {
     }, 500);
   }
 
-  // 10. Send to Telegram AND Google Sheets in Parallel
-  const [telegramResult, sheetsResult] = await Promise.all([
-    sendTelegramOrder(orderRecord, c.env),
-    sendSheetsOrder(orderRecord, c.env)
-  ]);
+  // 10. Load optional Telegram & Sheets credentials from D1 settings or env
+  const settingsRepo = new SettingsRepository(c.env.DB);
+  const dbSettings = await settingsRepo.getAllSettings();
+  const effectiveEnv: Env = {
+    ...c.env,
+    TELEGRAM_CHAT_ID: c.env.TELEGRAM_CHAT_ID || dbSettings['telegram_chat_id'],
+    SHEETS_WEBHOOK_URL: c.env.SHEETS_WEBHOOK_URL || dbSettings['sheets_webhook_url'],
+    SHEETS_SECRET: c.env.SHEETS_SECRET || dbSettings['sheets_secret'],
+  };
+
+  const isTelegramConfigured = Boolean(effectiveEnv.TELEGRAM_BOT_TOKEN && effectiveEnv.TELEGRAM_CHAT_ID);
+  const isSheetsConfigured = Boolean(effectiveEnv.SHEETS_WEBHOOK_URL);
+
+  let telegramSent = false;
+  let sheetsSent = false;
+
+  if (isTelegramConfigured || isSheetsConfigured) {
+    const [telegramResult, sheetsResult] = await Promise.all([
+      isTelegramConfigured ? sendTelegramOrder(orderRecord, effectiveEnv) : Promise.resolve({ success: false }),
+      isSheetsConfigured ? sendSheetsOrder(orderRecord, effectiveEnv) : Promise.resolve({ success: false })
+    ]);
+    telegramSent = telegramResult.success;
+    sheetsSent = sheetsResult.success;
+  }
 
   // Update D1 delivery flags
   await repo.updateDeliveryStatus(orderId, {
-    telegramSent: telegramResult.success,
-    sheetSent: sheetsResult.success
+    telegramSent,
+    sheetSent: sheetsSent
   });
-
-  // 11. Check delivery outcome: Must succeed in at least ONE of Telegram or Sheets
-  const atLeastOneSucceeded = telegramResult.success || sheetsResult.success;
-
-  if (!atLeastOneSucceeded) {
-    console.error(`[Order] Both Telegram and Sheets failed for order ${orderId}. Order retained in D1 for cron retry.`);
-    return c.json({
-      success: false,
-      error: 'حدث خطأ مؤقت في استقبال الطلب. طلبك محفوظ في النظام وسيقوم فريقنا بمراجعته أو يمكنك المحاولة لاحقاً.'
-    }, 503);
-  }
 
   // 12. Run Meta Conversions API (CAPI) inside ctx.waitUntil()
   c.executionCtx.waitUntil((async () => {
     try {
-      const capiResult = await sendMetaCapiOrder(orderRecord, c.env);
+      const capiResult = await sendMetaCapiOrder(orderRecord, effectiveEnv);
       await repo.updateMetaStatus(
         orderId,
         capiResult.success,
@@ -290,7 +309,7 @@ app.post('/api/order', async (c) => {
   })());
 
   // 13. Success Response to Customer
-  const targetProduct = PRODUCTS.find(p => p.id === data.productId) || PRODUCT;
+  const targetProduct = matchedProduct;
   const modelName = targetProduct.models.find(m => m.id === data.modelId)?.name || data.modelId;
   const colorName = data.colorId;
 
@@ -398,10 +417,19 @@ app.post('/api/admin/orders/:id/retry', async (c) => {
     return c.json({ success: false, error: 'الطلب غير موجود.' }, 404);
   }
 
+  const settingsRepo = new SettingsRepository(c.env.DB);
+  const dbSettings = await settingsRepo.getAllSettings();
+  const effectiveEnv: Env = {
+    ...c.env,
+    TELEGRAM_CHAT_ID: c.env.TELEGRAM_CHAT_ID || dbSettings['telegram_chat_id'],
+    SHEETS_WEBHOOK_URL: c.env.SHEETS_WEBHOOK_URL || dbSettings['sheets_webhook_url'],
+    SHEETS_SECRET: c.env.SHEETS_SECRET || dbSettings['sheets_secret'],
+  };
+
   const [tgRes, sheetRes, capiRes] = await Promise.all([
-    sendTelegramOrder(order, c.env),
-    sendSheetsOrder(order, c.env),
-    sendMetaCapiOrder(order, c.env)
+    sendTelegramOrder(order, effectiveEnv),
+    sendSheetsOrder(order, effectiveEnv),
+    sendMetaCapiOrder(order, effectiveEnv)
   ]);
 
   await repo.updateDeliveryStatus(order.id, {
@@ -463,16 +491,19 @@ app.get('/api/admin/telegram-status', async (c) => {
     return c.json({ success: false, error: 'غير مصرح بالوصول.' }, 401);
   }
 
+  const settingsRepo = new SettingsRepository(c.env.DB);
+  const dbSettings = await settingsRepo.getAllSettings();
+  const chatId = c.env.TELEGRAM_CHAT_ID || dbSettings['telegram_chat_id'];
   const hasToken = Boolean(c.env.TELEGRAM_BOT_TOKEN);
-  const hasChatId = Boolean(c.env.TELEGRAM_CHAT_ID);
+  const hasChatId = Boolean(chatId);
 
   return c.json({
     success: true,
     botConfigured: hasToken && hasChatId,
-    chatId: c.env.TELEGRAM_CHAT_ID || null,
+    chatId: chatId || null,
     message: hasToken && hasChatId
       ? 'بوت التلغرام ومعرف المحادثة مضبوطان وجاهزان لاستقبال الطلبات.'
-      : 'إعدادات التلغرام غير مكتملة (يرجى تعيين TELEGRAM_BOT_TOKEN و TELEGRAM_CHAT_ID).'
+      : 'إعدادات التلغرام غير مكتملة (اختياري، يمكنك إضافة معرف المحادثة من تبويب الإعدادات).'
   });
 });
 
@@ -482,17 +513,22 @@ app.post('/api/admin/telegram-test', async (c) => {
     return c.json({ success: false, error: 'غير مصرح بالوصول.' }, 401);
   }
 
-  if (!c.env.TELEGRAM_BOT_TOKEN || !c.env.TELEGRAM_CHAT_ID) {
-    return c.json({ success: false, error: 'بيانات بوت التلغرام غير مكتملة.' }, 400);
+  const settingsRepo = new SettingsRepository(c.env.DB);
+  const dbSettings = await settingsRepo.getAllSettings();
+  const botToken = c.env.TELEGRAM_BOT_TOKEN;
+  const chatId = c.env.TELEGRAM_CHAT_ID || dbSettings['telegram_chat_id'];
+
+  if (!botToken || !chatId) {
+    return c.json({ success: false, error: 'بيانات بوت التلغرام غير مكتملة (يرجى توفير Token ومعرف المحادثة).' }, 400);
   }
 
   try {
     const text = `🔔 <b>رسالة فحص تجريبية من لوحة إدارة المتجر</b>\n\nبوت التلغرام متصل بنجاح ومستعد لاستقبال طلبات الزبائن!`;
-    const res = await fetch(`https://api.telegram.org/bot${c.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        chat_id: c.env.TELEGRAM_CHAT_ID,
+        chat_id: chatId,
         text,
         parse_mode: 'HTML'
       })
@@ -525,6 +561,157 @@ app.get('/api/admin/meta-status', (c) => {
   });
 });
 
+// ==========================================
+// Settings Routes
+// ==========================================
+
+// GET /api/admin/settings
+app.get('/api/admin/settings', async (c) => {
+  if (!verifyAdminAuth(c)) {
+    return c.json({ success: false, error: 'غير مصرح بالوصول.' }, 401);
+  }
+  const settings = new SettingsRepository(c.env.DB);
+  const all = await settings.getAllSettings();
+  return c.json({ success: true, settings: all });
+});
+
+// POST /api/admin/settings
+app.post('/api/admin/settings', async (c) => {
+  if (!verifyAdminAuth(c)) {
+    return c.json({ success: false, error: 'غير مصرح بالوصول.' }, 401);
+  }
+  let body: Record<string, string>;
+  try {
+    body = await c.req.json() as Record<string, string>;
+  } catch {
+    return c.json({ success: false, error: 'بيانات غير صالحة.' }, 400);
+  }
+  const settings = new SettingsRepository(c.env.DB);
+  const allowed = ['telegram_chat_id', 'sheets_webhook_url', 'sheets_secret'];
+  for (const key of allowed) {
+    if (key in body && typeof body[key] === 'string') {
+      await settings.setSetting(key, body[key].trim());
+    }
+  }
+  return c.json({ success: true, message: 'تم حفظ الإعدادات بنجاح.' });
+});
+
+// ==========================================
+// Products Public Route
+// ==========================================
+
+// GET /api/products - public, returns D1 products (or fallback to config)
+app.get('/api/products', async (c) => {
+  try {
+    const repo = new ProductRepository(c.env.DB);
+    const dbProducts = await repo.getAllProducts(true);
+    if (dbProducts.length > 0) {
+      return c.json({ success: true, products: dbProducts, source: 'd1' });
+    }
+    return c.json({ success: true, products: PRODUCTS, source: 'config' });
+  } catch {
+    return c.json({ success: true, products: PRODUCTS, source: 'config' });
+  }
+});
+
+// ==========================================
+// Admin Products Routes
+// ==========================================
+
+// GET /api/admin/products
+app.get('/api/admin/products', async (c) => {
+  if (!verifyAdminAuth(c)) {
+    return c.json({ success: false, error: 'غير مصرح بالوصول.' }, 401);
+  }
+  const repo = new ProductRepository(c.env.DB);
+  const dbProducts = await repo.getAllProducts(false);
+  const dbIds = new Set(dbProducts.map((p) => p.id));
+  const merged = [...dbProducts, ...PRODUCTS.filter((p) => !dbIds.has(p.id))];
+  return c.json({ success: true, products: merged });
+});
+
+// POST /api/admin/products - create
+app.post('/api/admin/products', async (c) => {
+  if (!verifyAdminAuth(c)) {
+    return c.json({ success: false, error: 'غير مصرح بالوصول.' }, 401);
+  }
+  let body: any;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ success: false, error: 'بيانات غير صالحة.' }, 400);
+  }
+  if (!body.productName || !body.priceIQD) {
+    return c.json({ success: false, error: 'الحقول المطلوبة: productName, priceIQD.' }, 400);
+  }
+  const id = body.id
+    ? String(body.id).trim().toLowerCase().replace(/\s+/g, '-')
+    : `product-${Date.now()}`;
+  const product: StorefrontProduct = {
+    id,
+    isPublished: body.isPublished !== false,
+    storeName: body.storeName || STORE_CONFIG.storeName,
+    category: body.category || 'ساعة جدارية',
+    productName: String(body.productName),
+    nameAr: String(body.productName),
+    tagline: body.tagline || '',
+    description: body.description || '',
+    priceIQD: Number(body.priceIQD),
+    basePriceIQD: Number(body.priceIQD),
+    compareAtPriceIQD: Number(body.compareAtPriceIQD || 0),
+    features: Array.isArray(body.features) ? body.features : [],
+    images: Array.isArray(body.images) ? body.images : [],
+    models: Array.isArray(body.models) ? body.models : [],
+  };
+  const repo = new ProductRepository(c.env.DB);
+  await repo.saveProduct(product);
+  return c.json({ success: true, product, message: 'تم إضافة المنتج بنجاح.' });
+});
+
+// PUT /api/admin/products/:id - update
+app.put('/api/admin/products/:id', async (c) => {
+  if (!verifyAdminAuth(c)) {
+    return c.json({ success: false, error: 'غير مصرح بالوصول.' }, 401);
+  }
+  const id = c.req.param('id');
+  let body: any;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ success: false, error: 'بيانات غير صالحة.' }, 400);
+  }
+  const product: StorefrontProduct = {
+    id,
+    isPublished: body.isPublished !== false,
+    storeName: body.storeName || STORE_CONFIG.storeName,
+    category: body.category || 'ساعة جدارية',
+    productName: String(body.productName || ''),
+    nameAr: String(body.productName || ''),
+    tagline: body.tagline || '',
+    description: body.description || '',
+    priceIQD: Number(body.priceIQD || 0),
+    basePriceIQD: Number(body.priceIQD || 0),
+    compareAtPriceIQD: Number(body.compareAtPriceIQD || 0),
+    features: Array.isArray(body.features) ? body.features : [],
+    images: Array.isArray(body.images) ? body.images : [],
+    models: Array.isArray(body.models) ? body.models : [],
+  };
+  const repo = new ProductRepository(c.env.DB);
+  await repo.saveProduct(product);
+  return c.json({ success: true, product, message: 'تم تحديث المنتج بنجاح.' });
+});
+
+// DELETE /api/admin/products/:id
+app.delete('/api/admin/products/:id', async (c) => {
+  if (!verifyAdminAuth(c)) {
+    return c.json({ success: false, error: 'غير مصرح بالوصول.' }, 401);
+  }
+  const id = c.req.param('id');
+  const repo = new ProductRepository(c.env.DB);
+  await repo.deleteProduct(id);
+  return c.json({ success: true, message: 'تم حذف المنتج.' });
+});
+
 // Fallback route: serve static assets if ASSETS binding exists
 app.all('*', async (c) => {
   if (c.env.ASSETS) {
@@ -545,6 +732,14 @@ export default {
   async scheduled(event: ScheduledEvent, env: Env, _ctx: ExecutionContext): Promise<void> {
     console.log(`[Cron] Retry job triggered at ${new Date(event.scheduledTime).toISOString()}`);
     const repo = new OrderRepository(env.DB);
+    const settingsRepo = new SettingsRepository(env.DB);
+    const dbSettings = await settingsRepo.getAllSettings();
+    const effectiveEnv: Env = {
+      ...env,
+      TELEGRAM_CHAT_ID: env.TELEGRAM_CHAT_ID || dbSettings['telegram_chat_id'],
+      SHEETS_WEBHOOK_URL: env.SHEETS_WEBHOOK_URL || dbSettings['sheets_webhook_url'],
+      SHEETS_SECRET: env.SHEETS_SECRET || dbSettings['sheets_secret'],
+    };
 
     try {
       // Find orders where any channel failed (telegram_sent=0 OR sheet_sent=0 OR meta_sent=0)
@@ -563,7 +758,7 @@ export default {
 
           // Retry Telegram if not sent
           if (!order.telegram_sent) {
-            const tgRes = await sendTelegramOrder(order, env);
+            const tgRes = await sendTelegramOrder(order, effectiveEnv);
             if (tgRes.success) {
               await repo.updateDeliveryStatus(order.id, { telegramSent: true });
               order.telegram_sent = 1;
@@ -573,7 +768,7 @@ export default {
 
           // Retry Sheets if not sent
           if (!order.sheet_sent) {
-            const sheetRes = await sendSheetsOrder(order, env);
+            const sheetRes = await sendSheetsOrder(order, effectiveEnv);
             if (sheetRes.success) {
               await repo.updateDeliveryStatus(order.id, { sheetSent: true });
               order.sheet_sent = 1;
@@ -583,7 +778,7 @@ export default {
 
           // Retry Meta CAPI if not sent
           if (!order.meta_sent) {
-            const metaRes = await sendMetaCapiOrder(order, env);
+            const metaRes = await sendMetaCapiOrder(order, effectiveEnv);
             await repo.updateMetaStatus(order.id, metaRes.success, metaRes.response, metaRes.error);
             if (metaRes.success) {
               console.log(`[Cron] Order ${order.id} Meta CAPI retry succeeded.`);
