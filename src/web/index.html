@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" class="scroll-smooth">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+    <title>ساعة الحائط الملكية الفاخرة 3D | متجر الأناقة</title>
+    <meta name="description" content="ساعة حائط عصرية فاخرة ثلاثية الأبعاد بماكينة كوارتز صامتة 100%. توصيل مجاني لكافة محافظات العراق والدفع عند الاستلام مع المعاينة قبل الدفع." />
+    <meta name="theme-color" content="#121214" />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%23D4AF37'/><line x1='50' y1='50' x2='50' y2='25' stroke='%23121214' stroke-width='6' stroke-linecap='round'/><line x1='50' y1='50' x2='70' y2='50' stroke='%23121214' stroke-width='5' stroke-linecap='round'/><circle cx='50' cy='50' r='5' fill='%23121214'/></svg>" />
+
+    <!-- Google Fonts: Tajawal & Cairo -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
+
+    <!-- Meta Pixel Code -->
+    <script>
+      !function(f,b,e,v,n,t,s)
+      {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+      n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+      if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+      n.queue=[];t=b.createElement(e);t.async=!0;
+      t.src=v;s=b.getElementsByTagName(e)[0];
+      s.parentNode.insertBefore(t,s)}(window, document,'script',
+      'https://connect.facebook.net/en_US/fbevents.js');
+      
+      // Inject pixel ID at build time via Vite replacement %VITE_META_PIXEL_ID%
+      var pixelId = '%VITE_META_PIXEL_ID%';
+      if (pixelId && pixelId !== '%' + 'VITE_META_PIXEL_ID' + '%' && pixelId.trim() !== '') {
+        fbq('init', pixelId.trim());
+        fbq('track', 'PageView');
+      } else {
+        console.warn('[Meta Pixel] VITE_META_PIXEL_ID is not configured in build environment.');
+      }
+    </script>
+    <!-- End Meta Pixel Code -->
+  </head>
+  <body class="bg-[#0f0f11] text-gray-100 font-sans antialiased selection:bg-[#c3865c] selection:text-white min-h-screen">
+    <noscript>
+      <div class="bg-amber-600 text-white p-3 text-center text-sm font-bold">
+        تنبيه: لتجربة تصفح كاملة وإتمام الطلب بسلاسة، يرجى تفعيل الجافا سكريبت في متصفحك.
+      </div>
+    </noscript>
+    <div id="root"></div>
+    <script type="module" src="/main.tsx"></script>
+  </body>
+</html>

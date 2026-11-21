@@ -1,0 +1,30 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "abu-zahraa-store",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2024-11-21",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "single-page-application"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "orders-db",
+      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  },
+  "vars": {
+    "META_API_VERSION": "v21.0",
+    "META_CURRENCY": "USD",
+    "USD_RATE": "1310",
+    "STORE_NAME_AR": "متجر الأناقة للساعات الجدارية"
+  }
+}

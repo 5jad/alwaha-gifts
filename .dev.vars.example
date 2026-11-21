@@ -1,0 +1,28 @@
+# Environment Variables & Secrets for Cloudflare Worker
+# Copy this file to .dev.vars for local development (wrangler dev)
+# In production, set secrets using: wrangler secret put <KEY>
+
+# Telegram Bot Integration
+TELEGRAM_BOT_TOKEN="123456789:ABCdefGhIJKlmNoPQRstuVWXyz"
+TELEGRAM_CHAT_ID="-1001234567890"
+
+# Google Sheets Webhook (Apps Script Web App)
+SHEETS_WEBHOOK_URL="https://script.google.com/macros/s/AKfycbxXXXXXXXXXXXXXXXXXXXXXXXXXXXXX/exec"
+SHEETS_SECRET="super-secret-random-token-here"
+
+# Meta Pixel & Conversions API (CAPI)
+# Note: VITE_META_PIXEL_ID is baked into frontend at build time via .env or VITE_ prefix.
+# META_PIXEL_ID here is also used by the backend CAPI.
+META_PIXEL_ID="1234567890123456"
+META_CAPI_ACCESS_TOKEN="EAAXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+META_API_VERSION="v21.0"
+META_CURRENCY="USD"
+USD_RATE="1310"
+# Optional Meta Test Event Code (e.g. TEST12345) to see events in Events Manager > Test Events
+META_TEST_EVENT_CODE=""
+
+# Cloudflare Turnstile (Optional - leave empty to bypass)
+TURNSTILE_SECRET=""
+
+# Public environment variable for Vite build
+# VITE_META_PIXEL_ID="1234567890123456"
